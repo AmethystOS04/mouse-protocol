@@ -107,6 +107,31 @@ Protocol code and packets are unchanged. Build, all 151 focused tests,
 package dry-run and runtime audit were rerun; the earlier 2,252-test result
 and full-CI exclusions above remain historical, not a new full protocol pass.
 
+### Unconfirmed application status cache
+
+The companion app now marks its displayed status untrusted when the final
+post-write read fails. Before Games planning, backup capture or no-op
+confirmation, it requires a successful fresh read. A further refresh failure
+returns `failed` without a speculative write; Bridge retains the originals
+and retry state. A successful background read restores trust even when the
+returned JSON is identical. Already-landed writes can then be confirmed
+without rewriting them.
+
+Seventeen new application integration cases include both stale-cache
+counterexamples on all four runtime PIDs and sustained foreground/background
+read failures in both directions. They also cover pending user edits,
+manual no-op handling, generic scalar-DPI control and overlapping recovery.
+Sixteen cases failed on the previous app commit before the fix; same-JSON
+background recovery was an already-passing control. The paired build and
+all 384 app tests now pass, including 62 controller/Bridge cases; bundle
+checks and application audit also pass.
+The tests use synthetic devices and hook subscriptions, not a native Bridge
+process or new hardware testing.
+
+No protocol source or API change was needed. The protocol build, all 151
+focused tests, package dry-run and runtime audit passed again. This does not
+replace the outstanding full protocol CI or registry-only app validation.
+
 ## Live DPI and bank-operation regressions (2026-10-09)
 
 LunaFury live status now reads the current bank's DPI table and active stage,
