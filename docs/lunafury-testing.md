@@ -40,8 +40,8 @@ checks excluded: `the probe matrix can trigger every driver` and
 `no device can be claimed by more than one driver`. This is not a full
 protocol CI result; both checks still need to run before merge.
 
-The paired OpenMouse build and all 367 application tests pass with the local
-protocol tarball, including 45 controller/Bridge integration tests. The app still
+The paired OpenMouse build and all 420 application tests pass with the local
+protocol tarball, including 95 controller/Bridge integration tests. The app still
 pins the official `0.27.0` package, which lacks these APIs. See the
 [application development guide](https://github.com/sekiranunn/openmouse/blob/codex/lunafury-onboard-controls/docs/lunafury-development.md)
 for the paired setup and protocol-first release order.
@@ -122,15 +122,40 @@ counterexamples on all four runtime PIDs and sustained foreground/background
 read failures in both directions. They also cover pending user edits,
 manual no-op handling, generic scalar-DPI control and overlapping recovery.
 Sixteen cases failed on the previous app commit before the fix; same-JSON
-background recovery was an already-passing control. The paired build and
-all 384 app tests now pass, including 62 controller/Bridge cases; bundle
-checks and application audit also pass.
+background recovery was an already-passing control. At the end of that
+round, the paired build and all 384 app tests passed, including 62
+controller/Bridge cases; bundle checks and application audit also passed.
 The tests use synthetic devices and hook subscriptions, not a native Bridge
 process or new hardware testing.
 
 No protocol source or API change was needed. The protocol build, all 151
 focused tests, package dry-run and runtime audit passed again. This does not
 replace the outstanding full protocol CI or registry-only app validation.
+
+### Companion manual Apply ordering (2026-10-12)
+
+The app also recovers untrusted status before executing nonempty manual
+Apply. Pending DPI count priority is evaluated from the confirmed enabled
+count at execution time, including after background recovery or a Games
+stash/restore. Expansion runs before dependent slot edits and reduction
+after them. A failed preflight retains staging without writing settings or
+automatically retrying that failed attempt. Count restaging removes only
+edits and selections outside the final requested count and is blocked while
+Apply holds the write guard.
+
+Thirty-three application integration cases and three ordering unit tests
+cover all four runtime PIDs, both count directions, sustained and overlapping
+read failures, partial writes, retries, Games-carried manual staging,
+consecutive count edits and generic/client-only stand-ins. The 32 fault/order
+integration cases and three unit cases fail against app `1b75133` before the
+fix. The owner's separate six-to-three-to-four reproduction now succeeds,
+with a subsequent Apply returning `unchanged`.
+
+The paired build and all 420 app tests pass, including 95 controller/Bridge
+cases; bundle checks and audit pass. This round changes no protocol source,
+API or packets. Protocol build, 151 focused tests, package dry-run and runtime
+audit were rerun successfully. No new hardware or native-Bridge result is
+claimed, and the earlier full-CI exclusions and release dependency remain.
 
 ## Live DPI and bank-operation regressions (2026-10-09)
 
