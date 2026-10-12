@@ -77,6 +77,7 @@ export type SteelSeriesProtocolFamily =
   | "aerox9-wireless"
   | "prime-plus"
   | "prime-mini-wireless"
+  | "prime-mini"
   | "sensei-ten";
 
 export interface SteelSeriesProduct {
@@ -309,6 +310,19 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: false,
+    verified: false,
+  }],
+  // prime_mini.lisp (vendor GG specification): wired only. Own command set
+  // (DPI batch 0x2D with uint16 factors, polling 0x2B, buttons 0x2A,
+  // single-zone lighting, firmware 0x90) — see ./prime-mini.ts. Not the
+  // Prime Mini Wireless (0x184A/0x1848, family "prime-mini-wireless"),
+  // which shares the plain Prime Wireless command set instead.
+  [0x184d, {
+    model: "Prime Mini",
+    family: "prime-mini",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
     verified: false,
   }],
   // rival310.py: wired only, endpoint 0. Own command set (0x53/0x54/0x5B/
