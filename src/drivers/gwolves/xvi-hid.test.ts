@@ -86,7 +86,7 @@ function xviDevice(productId: number, { prefixReplies = false, pollingCode = 128
   return { device: device as unknown as HIDDevice, state, sent };
 }
 
-test("the HTX Mini 8K dongle goes to the XVI client, not the VGN-family one", () => {
+test("the HTX Mini 8K dongle goes to the XVI client, not the XVI:0 one", () => {
   const { device } = xviDevice(0x2717);
   assert.equal(GWolvesXviHidClient.isSupported(device), true);
   assert.equal(GWolvesHidClient.isSupported(device), false);
@@ -159,4 +159,21 @@ test("reads and writes sleep, debounce, the sensor toggles and the buttons", asy
 
   state.sleep = 0xffff;
   assert.equal((await client.readStatus()).sleepTimeout, null);
+});
+
+test("a 4K dongle caps polling at 4 kHz while an 8K dongle allows 8 kHz", async () => {
+  const fourK = xviDevice(0x5807);
+  const fourKStatus = await new GWolvesXviHidClient(fourK.device).readStatus();
+  assert.deepEqual(fourKStatus.supportedPollingRates, [125, 250, 500, 1000, 2000, 4000]);
+  await assert.rejects(new GWolvesXviHidClient(fourK.device).setPollingRate(8000), /does not support 8000 Hz/);
+
+  const eightK = xviDevice(0x5817);
+  const eightKStatus = await new GWolvesXviHidClient(eightK.device).readStatus();
+  assert.ok(eightKStatus.supportedPollingRates?.includes(8000));
+});
+
+test("a 1K receiver stops at 1 kHz", async () => {
+  const { device } = xviDevice(0x5803);
+  const status = await new GWolvesXviHidClient(device).readStatus();
+  assert.deepEqual(status.supportedPollingRates, [125, 250, 500, 1000]);
 });
