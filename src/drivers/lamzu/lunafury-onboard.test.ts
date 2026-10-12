@@ -4,7 +4,7 @@ import { LamzuHidClient } from "./hid.ts";
 
 (globalThis as { window?: { setTimeout: typeof setTimeout } }).window ??= { setTimeout };
 
-function fixture(productId = 0x0033, options: { ignore?: string; stale?: string; unsupported?: boolean; truncate?: boolean } = {}) {
+function fixture(productId = 0x0033, options: { ignore?: string; stale?: string; fail?: string; unsupported?: boolean; truncate?: boolean } = {}) {
   let activeProfile = 1;
   const banks = Array.from({ length: 3 }, (_, index) => ({
     count: 3, active: 2, axes: true, scan: 1, usb: 1, lod: 1, debounce: 0,
@@ -45,6 +45,7 @@ function fixture(productId = 0x0033, options: { ignore?: string; stale?: string;
     receiveFeatureReport: async () => {
       const packet = sent.at(-1)!;
       const key = `${packet[4]}:${packet[5]}`;
+      if (options.fail === key) throw new Error("Injected feature-report read failure.");
       const profile = packet[6];
       const bank = banks[profile - 1] ?? banks[activeProfile - 1];
       let payload = [profile, 0];
@@ -191,11 +192,32 @@ test("unsupported optional features stay absent and truncated DPI tables fail sa
   const status = await client.readStatus();
   assert.equal(status.lunafury?.buttonPollingRateHz, undefined);
   assert.equal(status.lunafury?.separateDpiAxes, undefined);
-  assert.equal(status.supportsSeparateDpiAxes, false);
+  assert.equal(status.supportsSeparateDpiAxes, undefined);
   await client.setDpi(1200);
   assert.equal((await client.readStatus()).dpi, 1200, "an unsupported axis toggle must not block the existing DPI control");
   await assert.rejects(fixture(0x33, { truncate: true }).client.setDpiStageValue(0, 1600), /Truncated/);
 });
+
+for (const pid of [0x32, 0x33, 0x54, 0x84]) {
+  test(`LunaFury ${pid.toString(16)} keeps axis-read failures unknown and recovers on a full reread`, async () => {
+    const options: { fail?: string } = { fail: "1:141" };
+    const { client, banks, sent } = fixture(pid, options);
+    const failed = await client.readStatus();
+    assert.equal(failed.supportsSeparateDpiAxes, undefined);
+    assert.equal(failed.lunafury?.separateDpiAxes, undefined);
+    assert.deepEqual(failed.dpiStages, [400, 800, 1600]);
+    assert.deepEqual(failed.dpiStagesY, [800, 1600, 3200]);
+    assert.ok(sent.some(packet => packet[4] === 1 && packet[5] === 0x8d));
+
+    options.fail = undefined;
+    banks[0].axes = false;
+    const recovered = await client.readStatus();
+    assert.equal(recovered.supportsSeparateDpiAxes, true, "disabled X/Y is still a supported control");
+    assert.equal(recovered.lunafury?.separateDpiAxes, false);
+    assert.deepEqual(recovered.dpiStagesY, failed.dpiStagesY);
+    assert.ok(sent.every(packet => packet[5] >= 0x80), "capability reads must not write the device");
+  });
+}
 
 test("live status detects a profile switched outside this client", async () => {
   const { client, device } = fixture();

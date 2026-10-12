@@ -334,7 +334,8 @@ export class LamzuHidClient {
       : this.stageIndex((await this.request(PROFILE_READ.activeStage(profile)))[1], stages.length);
     const pollingRate = await this.request(PROFILE_READ.pollingRate(profile));
     const liftOffDistance = await this.request(PROFILE_READ.liftOffDistance(profile));
-    const separateAxes = this.profile()?.separateDpiAxes === false
+    const separateAxesUnsupported = this.profile()?.separateDpiAxes === false;
+    const separateAxes = separateAxesUnsupported
       ? null
       : await (luna ? this.readLunaFury(LUNAFURY_ONBOARD_READ.separateAxes(profile))
         : this.request(PROFILE_READ.separateAxes(profile))).catch(() => null);
@@ -369,7 +370,10 @@ export class LamzuHidClient {
       batteryState: battery[0] === 1 ? "Charging" : "Discharging",
       dpi: stage.x,
       dpiY: stage.y,
-      supportsSeparateDpiAxes: luna ? lunafuryDecodeSeparateAxes(separateAxes) !== undefined : separateAxes ? separateAxes[1] === 1 : false,
+      supportsSeparateDpiAxes: luna
+        ? (separateAxesUnsupported ? false
+          : separateAxes === null ? undefined : lunafuryDecodeSeparateAxes(separateAxes) !== undefined)
+        : separateAxes ? separateAxes[1] === 1 : false,
       ...(luna ? { dpiStages: stages.map((item) => item.x), dpiStagesY: stages.map((item) => item.y), activeDpiStage: activeStage } : {}),
       pollingRateHz: this.decodePollingRate(pollingRate[1]),
       supportedPollingRates: this.getSupportedPollingRates(),

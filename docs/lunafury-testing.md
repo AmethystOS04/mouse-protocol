@@ -35,8 +35,8 @@ Games apply/restore has automated coverage only.
 
 ## Automated checks
 
-Build, package checks and all 2,470 protocol tests pass, including both
-exhaustive registry checks. The 158 Lamzu driver/codec tests also pass with
+Build, package checks and all 2,474 protocol tests pass, including both
+exhaustive registry checks. The 162 Lamzu driver/codec tests also pass with
 real timers. Coverage includes the four runtime PIDs, bank isolation, DPI storage,
 write/read failures and retry recovery. Runtime audit reports no vulnerabilities;
 development and release dependencies still have audit findings.
@@ -49,5 +49,9 @@ Synthetic HID and Bridge callbacks do not replace hardware testing.
 ## Integration
 
 Merge and publish the protocol before upgrading the app's exact npm dependency.
+After pinning the published version, the app's `CI / check` job runs `npm ci`,
+`npm run build`, `npm test`, `npm run size` and `npm audit --audit-level=high`
+against registry-only dependencies. Local paired-package checks do not replace
+this gate.
 Both branches require upstream CI before merge.
 See the [application setup](https://github.com/sekiranunn/openmouse/blob/codex/lunafury-onboard-controls/docs/lunafury-development.md).
