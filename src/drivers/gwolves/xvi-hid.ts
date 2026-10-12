@@ -123,8 +123,11 @@ export class GWolvesXviHidClient {
 
   private get supportedPollingRates(): number[] {
     // Wired and the ACE models' 1K receivers (PIDs ending 0x03) stop at 1 kHz;
-    // every other XVI receiver in env-models.json is its 8K dongle.
-    const max = this.isWirelessPath() && (this.device.productId & 0xff) !== 0x03 ? 8000 : 1000;
+    // the 4K dongles (PIDs ending 0x07, the _4KDongle entries in
+    // env-models.json) stop at 4 kHz; every other XVI receiver in that config
+    // is its 8K dongle.
+    const lowByte = this.device.productId & 0xff;
+    const max = this.isWirelessPath() ? (lowByte === 0x03 ? 1000 : lowByte === 0x07 ? 4000 : 8000) : 1000;
     return [...POLLING_CODES.keys()].filter((rate) => rate <= max);
   }
 

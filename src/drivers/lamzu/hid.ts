@@ -334,12 +334,16 @@ export class LamzuHidClient {
       : this.stageIndex((await this.request(PROFILE_READ.activeStage(profile)))[1], stages.length);
     const pollingRate = await this.request(PROFILE_READ.pollingRate(profile));
     const liftOffDistance = await this.request(PROFILE_READ.liftOffDistance(profile));
-    const separateAxes = await (luna ? this.readLunaFury(LUNAFURY_ONBOARD_READ.separateAxes(profile))
-      : this.request(PROFILE_READ.separateAxes(profile))).catch(() => null);
+    const separateAxes = this.profile()?.separateDpiAxes === false
+      ? null
+      : await (luna ? this.readLunaFury(LUNAFURY_ONBOARD_READ.separateAxes(profile))
+        : this.request(PROFILE_READ.separateAxes(profile))).catch(() => null);
     const angleSnapping = await this.request(PROFILE_READ.angleSnapping(profile)).catch(() => null);
     const motionSync = await this.request(PROFILE_READ.motionSync(profile)).catch(() => null);
     const competitiveMode = await this.request(PROFILE_READ.competitiveMode(profile)).catch(() => null);
-    const hyperMode = await this.request(PROFILE_READ.hyperMode(profile)).catch(() => null);
+    const hyperMode = this.profile()?.hyperMode === false
+      ? null
+      : await this.request(PROFILE_READ.hyperMode(profile)).catch(() => null);
     const rippleControl = await this.request(PROFILE_READ.rippleControl(profile)).catch(() => null);
     const dongleLed = this.profile()?.dongleLed
       ? await this.request(PROFILE_READ.dongleLed(profile)).catch(() => null)
@@ -791,6 +795,7 @@ export class LamzuHidClient {
   }
 
   async setHyperMode(enabled: boolean): Promise<boolean> {
+    if (this.profile()?.hyperMode === false) throw new Error("This mouse does not offer Hyper mode.");
     return await this.setFlag(WRITE.hyperMode, PROFILE_READ.hyperMode, enabled, "hyperMode", "Hyper mode");
   }
 

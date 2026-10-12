@@ -35,6 +35,7 @@
       "@openmouse/protocol/moddo": ["./src/moddo/index.ts"],
       "@openmouse/protocol/orbital": ["./src/orbital/index.ts"],
       "@openmouse/protocol/pulsar": ["./src/pulsar/index.ts"],
+      "@openmouse/protocol/redragon": ["./src/redragon/index.ts"],
       "@openmouse/protocol/razer": ["./src/razer/index.ts"],
       "@openmouse/protocol/razer-devices": ["./src/razer/devices.ts"],
       "@openmouse/protocol/razer-v4": ["./src/razer/v4.ts"],
@@ -50,7 +51,8 @@
       "@openmouse/protocol/bytech": ["./src/bytech/index.ts"],
       "@openmouse/protocol/rapoo": ["./src/rapoo/index.ts"],
       "@openmouse/protocol/fater": ["./src/fater/index.ts"],
-      "@openmouse/protocol/coolermaster": ["./src/coolermaster/index.ts"]
+      "@openmouse/protocol/coolermaster": ["./src/coolermaster/index.ts"],
+      "@openmouse/protocol/ajazz": ["./src/ajazz/index.ts"]
     }
   },
   "include": ["src/**/*"],

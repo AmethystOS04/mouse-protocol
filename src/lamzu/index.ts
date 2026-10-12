@@ -9,9 +9,15 @@ export interface LamzuProduct {
   model: string;
   wireless: boolean;
   pollingRates: readonly number[];
-  brand?: "Lamzu" | "CRDRAKO" | "Attack Shark" | "LunaFury" | "RAWM";
+  brand?: "Lamzu" | "CRDRAKO" | "Attack Shark" | "LunaFury" | "RAWM" | "Vancer";
   /** Left and right buttons are magnetic switches (Leviathan V4 GT). */
   magnetic?: boolean;
+  /**
+   * False when the vendor configurator hides a control the firmware still
+   * answers, so the driver neither reads nor offers it.
+   */
+  separateDpiAxes?: boolean;
+  hyperMode?: boolean;
   uiFamily?: string;
   mouseTarget?: number;
   maxDpi?: number;
@@ -34,6 +40,20 @@ export const LUNAFURY_PRODUCT_IDS = [0x0032, 0x0033, 0x0054, 0x0084] as const;
 // same CompX platform: wired 125-1000, 8K receiver 125-8000, DPIMax 42000.
 // Only the R5 Ultra has been seen on hardware.
 export const ATTACKSHARK_PRODUCT_IDS = [0x0046, 0x0047, 0x0021, 0x0022, 0x003a, 0x003b] as const;
+// Vancer x Arbiter Studio Akitsu Medium 3950, cable and 8K receiver, both
+// tested on hardware. Ids, rates and flags come from the Arbiter Web HUB device
+// table (webapp.arbiterstudio.com/Config/env-models.json, inspected
+// 2026-10-11). The rest of the Akitsu line is left out until someone can test
+// it. See docs/vancer-akitsu.md.
+export const VANCER_PRODUCT_IDS = [0x0066, 0x0067] as const;
+const RATES_VANCER_WIRED = [500, 1000] as const;
+const RATES_VANCER_8K = [500, 1000, 2000, 4000, 8000] as const;
+// Whole minutes from 1 to 30, the range of the Web HUB's sleep slider.
+const SLEEP_VANCER: readonly number[] = Array.from({ length: 30 }, (_, index) => (index + 1) * 60);
+// The Web HUB sets DPIXYEnable and HyperModeEnable to 0 for the Akitsu.
+const VANCER: Partial<LamzuProduct> = {
+  brand: "Vancer", maxDpiStages: 5, sleepOptions: SLEEP_VANCER, separateDpiAxes: false, hyperMode: false,
+};
 export const LAMZU_PRODUCTS: ReadonlyMap<number, LamzuProduct> = new Map([
   // RAWM's Leviathan V4 GT answers the same page-command framing. Product ids
   // come from the V4 GT's web hub; not yet tried on hardware.
@@ -101,6 +121,8 @@ export const LAMZU_PRODUCTS: ReadonlyMap<number, LamzuProduct> = new Map([
     brand: "Attack Shark", model: "R8", wireless: true,
     pollingRates: RATES_8K_FULL, maxDpi: 42000, uiFamily: "attack-shark",
   }],
+  [0x0066, { ...VANCER, model: "Akitsu Medium 3950", wireless: false, pollingRates: RATES_VANCER_WIRED }],
+  [0x0067, { ...VANCER, model: "Akitsu Medium 3950", wireless: true, pollingRates: RATES_VANCER_8K }],
 ]);
 /**
  * Lamzu's own vendor id, introduced with the Inca 8K. Every earlier Lamzu

@@ -42,6 +42,10 @@
       "types": "./dist/endgame-gear/op1.d.ts",
       "import": "./dist/endgame-gear/op1.js"
     },
+    "./endgame-gear-ot": {
+      "types": "./dist/endgame-gear/ot.d.ts",
+      "import": "./dist/endgame-gear/ot.js"
+    },
     "./finalmouse": {
       "types": "./dist/finalmouse/index.d.ts",
       "import": "./dist/finalmouse/index.js"
@@ -178,6 +182,10 @@
       "types": "./dist/glorious-classic/index.d.ts",
       "import": "./dist/glorious-classic/index.js"
     },
+    "./glorious-core2": {
+      "types": "./dist/glorious-core2/index.d.ts",
+      "import": "./dist/glorious-core2/index.js"
+    },
     "./ksnake": {
       "types": "./dist/ksnake/index.d.ts",
       "import": "./dist/ksnake/index.js"
@@ -206,6 +214,10 @@
       "types": "./dist/fater/index.d.ts",
       "import": "./dist/fater/index.js"
     },
+    "./ajazz": {
+      "types": "./dist/ajazz/index.d.ts",
+      "import": "./dist/ajazz/index.js"
+    },
     "./coolermaster": {
       "types": "./dist/coolermaster/index.d.ts",
       "import": "./dist/coolermaster/index.js"
@@ -214,7 +226,7 @@
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.json",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "tsx --import ./scripts/fast-test-timers.mjs --test \"src/**/*.test.ts\"",
     "check": "npm run build && npm test && npm pack --dry-run",
     "prepare": "npm run build"
   },

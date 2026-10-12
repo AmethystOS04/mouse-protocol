@@ -3,6 +3,8 @@
  * Drivers added in a PR should set only the flags they need so the shell
  * stays free of brand-specific branching.
  */
+import type { AtkDeviceFeatures } from "./atk/device-catalog.generated.js";
+
 export interface MouseUiHints {
   /** Stable driver id, e.g. "egg-we". */
   family?: string;
@@ -110,7 +112,7 @@ export interface MouseLighting {
   brightnessLevels?: readonly number[];
   /** True when the mouse cannot report the effect back (Razer effect writes). */
   writeOnly?: boolean;
-  /** HID++ per-key/per-LED zone id when this is a directly painted RGB cell. */
+  /** Driver-specific per-LED zone id when this is a directly painted RGB cell. */
   hardwareZoneId?: number;
   /** Lets the UI group individually painted cells into one physical surface. */
   group?: string;
@@ -152,6 +154,17 @@ export interface AtkReceiverInfo {
   pairingSecondsRemaining: number | null;
 }
 
+export interface AsusOmniDevice {
+  productId: number;
+  kind: "mouse" | "keyboard" | "unknown";
+  name: string;
+}
+
+export interface AsusOmniInfo {
+  firmware: string;
+  devices: AsusOmniDevice[];
+}
+
 export interface MagneticButtonStatus {
   /** Null when the mouse has a single switch type or did not report it. */
   switchType: "magnetic" | "optical" | null;
@@ -191,7 +204,7 @@ export interface MagneticCalibrationProgress {
 }
 
 export interface MouseStatus {
-  brand: "RAWM" | "Motospeed" | "Logitech" | "Pulsar" | "Endgame Gear" | "WLMouse" | "G-Wolves" | "Lamzu" | "CRDRAKO" | "Attack Shark" | "LunaFury" | "Orbital" | "Razer" | "Teevolution" | "ATK" | "VXE" | "VGN" | "VAXEE" | "Finalmouse" | "Keychron" | "moddoMOUSE" | "Ninjutso" | "Zaunkoenig" | "Fantech" | "Wooting" | "WALLHACK" | "SteelSeries" | "Glorious" | "MCHOSE" | "K-snake" | "Noir Gear" | "Lingbao" | "GearHub" | "AJAZZ" | "Corsair" | "Microsoft" | "Dareu" | "Redragon" | "Incott" | "HyperX" | "ASUS" | "Ryunix" | "Delux" | "GravaStar" | "IPI" | "Rapoo" | "Fater" | "Cooler Master";
+  brand: "RAWM" | "Motospeed" | "Logitech" | "Pulsar" | "Endgame Gear" | "WLMouse" | "G-Wolves" | "Lamzu" | "CRDRAKO" | "Attack Shark" | "LunaFury" | "Vancer" | "Orbital" | "Razer" | "Teevolution" | "ATK" | "VXE" | "VGN" | "VAXEE" | "Finalmouse" | "Keychron" | "moddoMOUSE" | "Ninjutso" | "Zaunkoenig" | "Fantech" | "Wooting" | "WALLHACK" | "SteelSeries" | "Glorious" | "MCHOSE" | "K-snake" | "Noir Gear" | "Lingbao" | "GearHub" | "AJAZZ" | "Corsair" | "Microsoft" | "Dareu" | "Redragon" | "Incott" | "HyperX" | "ASUS" | "Ryunix" | "Delux" | "GravaStar" | "IPI" | "Rapoo" | "Fater" | "Cooler Master" | "AJAZZ";
   name: string;
   /** Optional LunaFury controls, populated only after successful device reads. */
   lunafury?: import("../lamzu/lunafury.js").LunaFurySettings;
@@ -231,6 +244,8 @@ export interface MouseStatus {
   atkButtonMappings?: AtkStoredButton[];
   /** Receiver and pairing telemetry. Pairing controls are intentionally separate. */
   atkReceiver?: AtkReceiverInfo;
+  /** ROG Omni receiver firmware and paired devices. */
+  asusOmni?: AsusOmniInfo;
   /**
    * F1 Ultimate sensor sampling-rate mode: 0 Basic, 1 Shard, 2 Shard MAX.
    * Null until read; drivers without the 0x00b5 row leave it undefined.
@@ -247,6 +262,11 @@ export interface MouseStatus {
    * driver's last write rather than the hardware.
    */
   atkDongleLight?: number | null;
+  /**
+   * Vendor catalog capability flags for ATK/VXE mice (e.g. noBottomButton,
+   * noAthleticsMax, supportDpiToggle). Undefined when the model is unlisted.
+   */
+  atkCatalogFeatures?: AtkDeviceFeatures;
   /**
    * How many onboard profiles the device exposes, when it has a simple
    * numbered set the user can switch between (distinct from Logitech's
@@ -288,6 +308,35 @@ export interface MouseStatus {
   finalmouseDongleLedMode?: number | null;
   finalmouseTournamentScrollMode?: number | null;
   finalmouseTournamentScrollTimeoutMs?: number | null;
+  /** True on Starlight X dongles; false/undefined on Ultralight X. */
+  finalmouseIsSlx?: boolean | null;
+  /** Starlight X click mode per switch: 0 mechanical, 1 TMR analog. */
+  finalmouseClickModeL?: number | null;
+  finalmouseClickModeR?: number | null;
+  /** Starlight X release point per switch: 0 normal, 1 early, 2 late. */
+  finalmouseClickReleaseL?: number | null;
+  finalmouseClickReleaseR?: number | null;
+  /** Starlight X TMR actuation steps in 0.01 mm units (1-40). */
+  finalmouseTmrThrL?: number | null;
+  finalmouseTmrThrR?: number | null;
+  /** Starlight X rapid-trigger sensitivity in µm (150-250). */
+  finalmouseTmrHystL?: number | null;
+  finalmouseTmrHystR?: number | null;
+  /** Starlight X calibrated most-sensitive-point reference in µm. */
+  finalmouseTmrMspL?: number | null;
+  finalmouseTmrMspR?: number | null;
+  /** Starlight X PAW lift-off in millimetres (0.7-2.0). */
+  finalmousePawLodMm?: number | null;
+  /** True when the PAW value came from the custom slider rather than a preset. */
+  finalmousePawLodCustom?: boolean | null;
+  /** Starlight X profile roster size, when readable. */
+  finalmouseProfileCount?: number | null;
+  /** Starlight X active profile as a 0-based index. */
+  finalmouseProfileActive?: number | null;
+  /** Starlight X profile enable bitmask. */
+  finalmouseProfileEnabledMask?: number | null;
+  /** Starlight X profile names by 0-based index. */
+  finalmouseProfileNames?: Record<number, string> | null;
   /**
    * Incott's 2.4 GHz receiver LED: 0 connect & polling rate, 1 battery
    * status, 2 battery warning. A property of the dongle, so it is omitted
@@ -364,6 +413,27 @@ export interface MouseStatus {
   sensorMode?: "Eco" | "High" | "Ultra" | null;
   sensorModeStored?: 0 | 1 | null;
   sensorModeEditable?: boolean | null;
+  /**
+   * WALLHACK M-001 sensor scanning mode (function area 116): HIGH is the
+   * default frame rate, ACCEL pins the sensor to high performance at higher
+   * battery cost. Undefined when the mouse did not answer.
+   */
+  sensorScanningMode?: "HIGH" | "ACCEL" | null;
+  /** WALLHACK M-001 DPI acceleration on/off. Needs mouse firmware 57+. */
+  dynamicSensitivityEnabled?: boolean | null;
+  /** WALLHACK M-001 active DPI-acceleration curve. Needs mouse firmware 57+. */
+  dynamicSensitivityMode?: "classic" | "natural" | "jump" | "custom" | null;
+  /** WALLHACK M-001 motion-speed reporting (used to preview curves). */
+  dynamicSensitivitySpeedReporting?: boolean | null;
+  /**
+   * WALLHACK M-001 DPI-acceleration curve tables by mode. Each curve holds
+   * exactly 5 points: speed in sensor counts/ms, gain multiplier. Read on
+   * demand (not with the status poll); null until loaded.
+   */
+  dynamicSensitivityCurves?: Record<
+    "classic" | "natural" | "jump" | "custom",
+    Array<{ speed: number; gain: number }>
+  > | null;
   performanceDuration?: number | null;
   angleTuning?: number | null;
   wheelAcceleration?: boolean | null;

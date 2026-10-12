@@ -45,7 +45,9 @@ import {
   atkUnpackDpiStage,
   atkUnpackDpiStageForSensor,
 } from "@openmouse/protocol/atk";
-import { type AtkProduct, ATK_COMPX_PRODUCT_IDS, ATK_PRODUCTS } from "./products.ts";
+import { type AtkProduct, ATK_COMPX_PRODUCT_IDS, ATK_PRODUCTS, atkCatalogDevice, atkCatalogSensorToSensor } from "./products.ts";
+import type { AtkDeviceDescriptor, AtkDeviceFeatures } from "./device-catalog.generated.ts";
+import type { AtkSensor } from "@openmouse/protocol/atk";
 
 // ATK mice (A9 family and siblings) use the same OEM framing as the Endgame
 // Gear WE series — 16-byte EEPROM commands on report 0x08 — but carry them on
@@ -72,6 +74,9 @@ const VXE_R1_PRO_MAX_RECEIVER_PID = 0xf58a;
 const VXE_R1_PRO_MAX_MOUSE_PID = 0xf58c;
 const VXE_R1_COMPX_RECEIVER_PID = 0xf58e;
 const VXE_R1_COMPX_MOUSE_PID = 0xf58f;
+// ATK HUB's generic "NK Mouse Dongle". Its product string changed from
+// "Nearlink Mouse Dongle" to "NK mouse NANO dongle" with a receiver update.
+const NEARLINK_RECEIVER_PID = 0x10c9;
 const R1_SETTINGS_LENGTH = 4;
 
 // Byte addresses in the mouse's configuration EEPROM.
@@ -155,6 +160,14 @@ export class AtkHidClient {
   private product: AtkProduct | null = null;
   private identified = false;
   private identifyAttempts = 0;
+  /** Runtime CID/MID from command 0x10, e.g. "1,8". Null until identified. */
+  private cidMid: string | null = null;
+  /** Vendor catalog entry for this USB id, resolved lazily. */
+  private catalog: AtkDeviceDescriptor | null = null;
+  /** Whether the catalog lookup has run at least once. */
+  private catalogResolved = false;
+  /** CID/MID key the catalog entry was resolved for (null = USB id only). */
+  private catalogResolvedFor: string | null = null;
   /** Last dongle-light mode written; no read command is known. */
   private dongleLightCache: number | null = null;
 
@@ -162,6 +175,13 @@ export class AtkHidClient {
     this.device = device;
   }
 
+  /**
+   * Claims ATK/VXE config interfaces. The 0x55-framed transport was captured
+   * on the 0xFF02:0x02 collection; the vendor HUB prefers 0xFF04:0x02 (and
+   * 0xFF05:0x01 on NearLink) on the same composite device and never lists
+   * 0xFF02, so the two are believed to coexist. Widening this to the vendor's
+   * pages needs a collection dump to confirm the framing carries over.
+   */
   static isSupported(device: HIDDevice): boolean {
     const search = (collection: HIDCollectionInfo): boolean =>
       (collection.usagePage === 0xff02 && collection.usage === 0x0002)
@@ -181,6 +201,10 @@ export class AtkHidClient {
     this.dongleLightCache = null;
     this.identified = false;
     this.identifyAttempts = 0;
+    this.cidMid = null;
+    this.catalog = null;
+    this.catalogResolved = false;
+    this.catalogResolvedFor = null;
     if (this.device.opened) await this.device.close();
   }
 
@@ -191,13 +215,18 @@ export class AtkHidClient {
 
   displayName(): string {
     if (this.product) return `${this.product.brand} ${this.product.model}`;
+    // Catalog-only mice show their real model name instead of the USB string.
+    const catalog = this.catalogEntry();
+    if (catalog) return catalog.model;
     const name = this.device.productName?.trim();
     if (!name) return "ATK";
     return /^atk/i.test(name) ? name : `ATK ${name}`;
   }
 
   deviceBrand(): AtkProduct["brand"] {
-    return this.product?.brand ?? (/^vxe\b/i.test(this.device.productName || "") ? "VXE" : "ATK");
+    return this.product?.brand
+      ?? this.catalogEntry()?.brand
+      ?? (/^vxe\b/i.test(this.device.productName || "") ? "VXE" : "ATK");
   }
 
   /**
@@ -213,6 +242,14 @@ export class AtkHidClient {
       || /receiver|dongle/i.test(this.device.productName || "");
   }
 
+  /** NearLink dongles: catalog-flagged models, HUB's generic NK receiver, or a product string naming the radio. */
+  private receiverDetail(): string {
+    const nearlink = this.features().isNearlink === true
+      || (this.device.vendorId === VENDOR_ID.atk && this.device.productId === NEARLINK_RECEIVER_PID)
+      || /\b(?:nearlink|nk)\b/i.test(this.device.productName || "");
+    return nearlink ? "NearLink receiver" : "2.4 GHz receiver";
+  }
+
   /** VXE R1-family devices using the shared EEPROM command framing. */
   isR1(): boolean {
     return this.product?.family === "r1"
@@ -220,31 +257,55 @@ export class AtkHidClient {
   }
 
   maxDpi(): number {
-    return this.product ? ATK_SENSORS[this.product.sensor].maxDpi : DPI_MAX;
+    const sensor = this.sensorKey();
+    return sensor ? ATK_SENSORS[sensor].maxDpi : DPI_MAX;
   }
 
   private isX1ProMax(): boolean {
     return this.product === ATK_PRODUCTS["2,39"];
   }
 
+  /** A9 Plus Nearlink (CID 2, MID 83): PAW3395 under the same ATK HUB controller as the R1. */
+  private isA9PlusNearlink(): boolean {
+    return this.product === ATK_PRODUCTS["2,83"];
+  }
+
+  /** Lift-off stored as 1 = 1 mm and 2 = 2 mm rather than the continuous 0.7 mm scale. */
+  private usesR1LiftOffCodes(): boolean {
+    return this.isR1() || this.isA9PlusNearlink();
+  }
+
+  /** ATK HUB's wired-R1 debounce and sleep lists, and straight-line correction at advanced offset 6. */
+  private sharesR1Settings(): boolean {
+    return this.isX1ProMax() || this.isA9PlusNearlink();
+  }
+
   getSleepOptions(): readonly number[] {
-    return (this.isR1() && !this.usesR1LiveSettings()) || this.isX1ProMax() ? R1_SLEEP_SECONDS : SLEEP_SECONDS;
+    return (this.isR1() && !this.usesR1LiveSettings()) || this.sharesR1Settings() ? R1_SLEEP_SECONDS : SLEEP_SECONDS;
   }
 
   getDebounceMaxMs(): number {
-    return this.isR1() || this.isX1ProMax() || this.isF1Ultimate() ? R1_DEBOUNCE_MAX_MS : DEBOUNCE_MAX_MS;
+    return this.isR1() || this.sharesR1Settings() || this.isF1Ultimate() ? R1_DEBOUNCE_MAX_MS : DEBOUNCE_MAX_MS;
   }
 
   getDebounceOptions(): readonly number[] {
-    return (this.isR1() && !this.usesR1LiveSettings()) || this.isX1ProMax()
-      ? R1_DEBOUNCE_MILLISECONDS
-      : Array.from(
-        { length: this.getDebounceMaxMs() + (this.usesR1LiveSettings() ? 0 : 1) },
-        (_, index) => index + (this.usesR1LiveSettings() ? 1 : 0),
-      );
+    if ((this.isR1() && !this.usesR1LiveSettings()) || this.sharesR1Settings()) {
+      return R1_DEBOUNCE_MILLISECONDS;
+    }
+    // Devices flagged noZeroKeyDebounce start at 1 ms; the rest offer 0.
+    const startAtOne = this.usesR1LiveSettings() || this.features().noZeroKeyDebounce === true;
+    return Array.from(
+      { length: this.getDebounceMaxMs() + (startAtOne ? 0 : 1) },
+      (_, index) => index + (startAtOne ? 1 : 0),
+    );
   }
 
   getSupportedPollingRates(): number[] {
+    const ceiling = this.product?.maxPollingHz ?? Infinity;
+    return this.transportPollingRates().filter((hertz) => hertz <= ceiling);
+  }
+
+  private transportPollingRates(): number[] {
     if (this.usesAtk1kReceiver()) return POLLING_RATES.map(([, hertz]) => hertz).filter((hertz) => hertz <= 1000);
     return this.usesR1LiveSettings()
       ? [...ATK_VXE_R1_POLLING_RATES]
@@ -258,7 +319,8 @@ export class AtkHidClient {
    * Models top out below 42,000; writes are confirmed by reading back.
    */
   getDpiOptions(): number[] {
-    if (this.product) return atkDpiOptionsForSensor(this.product.sensor);
+    const sensor = this.sensorKey();
+    if (sensor) return atkDpiOptionsForSensor(sensor);
     const options: number[] = [];
     for (let dpi = DPI_MIN; dpi <= 10000; dpi += 10) options.push(dpi);
     for (let dpi = 10050; dpi <= 30000; dpi += 50) options.push(dpi);
@@ -302,19 +364,30 @@ export class AtkHidClient {
     const stored = this.usesR1ProMaxUiTransport()
       ? await this.readR1StoredConfiguration().catch(() => null)
       : null;
+    const a9PerformanceMode = this.isA9PlusNearlink()
+      ? await this.readPerformanceMode()
+      : undefined;
     const receiver = this.usesR1LiveSettings()
       ? await this.readR1ReceiverInfo().catch(() => null)
       : null;
     const angleTuning = angle ? weUnpackScalarPair(angle[0], angle[1]) : null;
     const angleSnapping = angle ? weUnpackScalarPair(angle[2], angle[3]) : null;
-    const sensorProfile = this.product ? ATK_SENSORS[this.product.sensor] : null;
+    const sensor = this.sensorKey();
+    const sensorProfile = sensor ? ATK_SENSORS[sensor] : null;
     return this.lastStatus = {
       brand: this.deviceBrand(),
       name: this.displayName(),
       ui: {
         family: "atk",
         hideUnsupportedPollingRates: true,
-        forceShowBattery: battery !== null,
+        forceShowBattery: battery !== null && this.features().noShowPower !== true,
+        // A catalog-only model (no hand-verified identity) is read/written with
+        // the generic protocol, so be explicit that it is unverified.
+        statusNote: this.product === null && this.catalogEntry() !== null
+          ? "Model identified from the ATK catalog; settings use the generic protocol and are not yet verified on this exact model."
+          : undefined,
+        // Vendor catalog: models flagged noSensorAngle have no angle control.
+        hideAngleSnapping: this.features().noSensorAngle === true ? true : undefined,
         dpiStageEditor: this.usesR1ProMaxUiTransport() ? {
           maxStages: R1_MAX_DPI_STAGES,
           countEditable: true,
@@ -322,7 +395,8 @@ export class AtkHidClient {
           maxDpi: sensorProfile?.maxDpi ?? DPI_MAX,
           stepDpi: 50,
         } : undefined,
-        dpiLighting: r1Extras ? {
+        // Vendor catalog: noDpiRGB models have no DPI-indicator LED control.
+        dpiLighting: r1Extras && this.features().noDpiRGB !== true ? {
           modes: [0, 1, 2],
           brightness: [0, 1, 2],
           speed: [0, 1, 2],
@@ -336,7 +410,7 @@ export class AtkHidClient {
       dpiStages: dpiStages.map(({ x }) => x),
       dpiStageColors: r1Extras?.dpiStageColors,
       activeDpiStage,
-      supportsSeparateDpiAxes: this.isR1ProMax(),
+      supportsSeparateDpiAxes: this.isR1ProMax() && this.features().noXyDpi !== true,
       pollingRateHz: await this.readPollingRate(system),
       supportedPollingRates: this.getSupportedPollingRates(),
       activeProfile: stored?.activeProfile ?? null,
@@ -344,12 +418,13 @@ export class AtkHidClient {
       atkButtonMappings: stored?.buttons,
       atkReceiver: receiver ?? undefined,
       connectionType: this.isWireless() ? "Wireless" : "Wired",
-      connectionDetail: this.isWireless() ? "2.4 GHz receiver" : "Wired USB",
+      connectionDetail: this.isWireless() ? this.receiverDetail() : "Wired USB",
+      atkCatalogFeatures: this.catalogEntry()?.features,
       debounceMs: advanced[0],
       motionSync: advanced[2] === 1,
       sleepTimeout: advanced[4] * SLEEP_STEP_SECONDS || null,
       rippleControl: advanced[8] === 1,
-      performanceMode: r1Extras?.performanceMode,
+      performanceMode: r1Extras?.performanceMode ?? a9PerformanceMode,
       longRangeMode: r1Extras?.longRangeMode,
       atkSensorMode: f1Extras?.sensorMode ?? null,
       atkAntiMistouchMs: f1Extras?.antiMistouchMs ?? null,
@@ -357,12 +432,12 @@ export class AtkHidClient {
       dpiLedMode: r1Extras?.dpiLedMode,
       dpiLedBrightness: r1Extras?.dpiLedBrightness,
       dpiLedSpeed: r1Extras?.dpiLedSpeed,
-      angleSnapping: this.isR1() || this.isX1ProMax() || this.isF1Ultimate()
+      angleSnapping: this.isR1() || this.sharesR1Settings() || this.isF1Ultimate()
         ? advanced[6] === 1
         : angleSnapping === null ? null : angleSnapping === 1,
       angleTuning: angleTuning === null ? null : this.decodeAngle(angleTuning),
       liftOffDistance: this.decodeLiftOffDistance(liftOffDistance[0]),
-      supportedLiftOffDistances: this.isR1() ? ["Low", "High"] : undefined,
+      supportedLiftOffDistances: this.usesR1LiftOffCodes() ? ["Low", "High"] : undefined,
       liftOffScale: this.supportsLiftOffScale() ? this.liftOffScale(liftOffDistance[0]) : undefined,
       firmware,
     };
@@ -484,6 +559,9 @@ export class AtkHidClient {
       throw new Error(`This receiver does not support ${pollingRateHz} Hz.`);
     }
     if (!this.usesR1LiveSettings()) await this.identify();
+    if (pollingRateHz > (this.product?.maxPollingHz ?? Infinity)) {
+      throw new Error(`This mouse does not support ${pollingRateHz} Hz.`);
+    }
     if (this.usesR1LiveSettings()) return await this.setR1PollingRate(pollingRateHz);
     const encoded = POLLING_RATES.find(([, hertz]) => hertz === pollingRateHz);
     if (!encoded) throw new Error(`This mouse does not support ${pollingRateHz} Hz.`);
@@ -508,7 +586,7 @@ export class AtkHidClient {
 
   async setDpi(dpi: number, dpiY: number = dpi): Promise<number> {
     await this.identify();
-    const sensor = this.product?.sensor ?? null;
+    const sensor = this.sensorKey();
     const options = sensor ? atkDpiOptionsForSensor(sensor) : null;
     for (const value of [dpi, dpiY]) {
       if (!Number.isInteger(value) || (options ? !options.includes(value) : value < DPI_MIN || value > DPI_MAX)) {
@@ -659,7 +737,7 @@ export class AtkHidClient {
     if (!Number.isInteger(index) || index < 0 || index >= count) {
       throw new Error(`DPI stage must be between 1 and ${count}.`);
     }
-    const sensor = this.product?.sensor ?? null;
+    const sensor = this.sensorKey();
     const options = sensor ? atkDpiOptionsForSensor(sensor) : this.getDpiOptions();
     if (!Number.isInteger(dpi) || !options.includes(dpi)) {
       throw new Error(`${dpi.toLocaleString()} is not a supported DPI value.`);
@@ -729,7 +807,7 @@ export class AtkHidClient {
 
     const confirmed = this.usesVerifiedR1ProMaxReceiverTransport()
       ? await this.writeR1ProMaxReceiverPerformanceBlock(change)
-      : await this.writeR1PerformanceBlock(change);
+      : await this.writePerformanceBlock(change);
 
     const value = weUnpackScalarPair(confirmed[4]!, confirmed[5]!) === 1;
     if (value !== enabled) throw new Error(`The mouse left performance mode ${value ? "on" : "off"}.`);
@@ -739,6 +817,10 @@ export class AtkHidClient {
 
   async setLongRangeMode(enabled: boolean): Promise<boolean> {
     await this.identify();
+
+    if (this.features().noFarDistance === true) {
+      throw new Error("This mouse does not support long-range mode.");
+    }
 
     const receiver = this.usesVerifiedR1ProMaxReceiverTransport();
     if (!this.usesVerifiedR1WiredTransport() && !receiver) {
@@ -921,7 +1003,7 @@ export class AtkHidClient {
   async setLiftOffDistance(value: LiftOffDistance): Promise<LiftOffDistance> {
     if (!this.usesR1LiveSettings()) await this.identify();
     if (this.usesR1LiveSettings()) return await this.setR1LiftOffDistance(value);
-    const codes = this.isX1ProMax() ? X1_LIFT_OFF_CODES : this.isR1() ? R1_LIFT_OFF_CODES : LIFT_OFF_CODES;
+    const codes = this.isX1ProMax() ? X1_LIFT_OFF_CODES : this.usesR1LiftOffCodes() ? R1_LIFT_OFF_CODES : LIFT_OFF_CODES;
     const encoded = codes.find(([, name]) => name === value);
     if (!encoded) throw new Error(`This mouse does not support a ${value.toLowerCase()} lift-off distance.`);
     if (this.usesVerifiedR1ProMaxReceiverTransport()) {
@@ -1021,7 +1103,7 @@ export class AtkHidClient {
       return confirmed;
     }
 
-    if (this.isR1() || this.isX1ProMax() || this.isF1Ultimate()) {
+    if (this.isR1() || this.sharesR1Settings() || this.isF1Ultimate()) {
       return await this.setAdvancedFlag(
         6,
         enabled,
@@ -1057,7 +1139,7 @@ export class AtkHidClient {
 
   async setSleepTimeout(seconds: number): Promise<number> {
     if (!this.usesR1LiveSettings()) await this.identify();
-    const valid = this.isR1() || this.isX1ProMax()
+    const valid = this.isR1() || this.sharesR1Settings()
       ? this.getSleepOptions().includes(seconds)
       : Number.isInteger(seconds) && seconds >= SLEEP_STEP_SECONDS
         && seconds <= 0xff * SLEEP_STEP_SECONDS && seconds % SLEEP_STEP_SECONDS === 0;
@@ -1212,6 +1294,16 @@ export class AtkHidClient {
     }
   }
 
+  /**
+   * ATK HUB's "Basic Mode" (0) or "ATK Shard Competitive Firmware" (1): the
+   * pair at bytes 4-5 of the 0x00b5 row; null when unreadable or out of range.
+   */
+  private async readPerformanceMode(): Promise<boolean | null> {
+    const row = await this.read(REGISTER.sensorPerformance, R1_SENSOR_PERFORMANCE_LENGTH).catch(() => null);
+    const mode = row ? weUnpackScalarPair(row[4]!, row[5]!) : null;
+    return mode === 0 || mode === 1 ? mode === 1 : null;
+  }
+
   private decodeR1DpiLighting(block: Uint8Array): {
     dpiLedMode: number;
     dpiLedBrightness: number;
@@ -1304,9 +1396,10 @@ export class AtkHidClient {
     return await this.read(address, R1_SENSOR_PERFORMANCE_LENGTH);
   }
 
-  private async writeR1PerformanceBlock(change: (block: number[]) => void): Promise<Uint8Array> {
+  /** Wired R1s, and the A9 Plus Nearlink over its cable or NearLink receiver. */
+  private async writePerformanceBlock(change: (block: number[]) => void): Promise<Uint8Array> {
     await this.identify();
-    if (!this.usesVerifiedR1WiredTransport()) {
+    if (!this.usesVerifiedR1WiredTransport() && !this.isA9PlusNearlink()) {
       throw new Error("Performance mode is not available on this connection.");
     }
     const block = Array.from(await this.read(REGISTER.sensorPerformance, R1_SENSOR_PERFORMANCE_LENGTH));
@@ -1316,7 +1409,7 @@ export class AtkHidClient {
   }
 
   private dpiAddress(index: number): number {
-    const sensor = this.product?.sensor ?? null;
+    const sensor = this.sensorKey();
     if (sensor && ATK_SENSORS[sensor].family === "paw3955master") {
       return REGISTER.paw3955DpiBase + index * atkDpiStageLength(sensor);
     }
@@ -1324,10 +1417,10 @@ export class AtkHidClient {
   }
 
   private async readDpiStage(index: number): Promise<{ x: number; y: number }> {
-    const sensor = this.product?.sensor ?? null;
+    const sensor = this.sensorKey();
     const data = await this.read(this.dpiAddress(index), atkDpiStageLength(sensor));
-    const stage = this.product
-      ? atkUnpackDpiStageForSensor(this.product.sensor, data)
+    const stage = sensor
+      ? atkUnpackDpiStageForSensor(sensor, data)
       : atkUnpackDpiStage(data);
     if (!stage) throw new Error("The mouse reported a DPI stage that failed its checksum.");
     return stage;
@@ -1351,7 +1444,7 @@ export class AtkHidClient {
 
   private decodeLiftOffDistance(code: number): LiftOffDistance | null {
     if (this.isX1ProMax()) return X1_LIFT_OFF_CODES.find(([value]) => value === code)?.[1] ?? null;
-    if (this.isR1()) return R1_LIFT_OFF_CODES.find(([value]) => value === code)?.[1] ?? null;
+    if (this.usesR1LiftOffCodes()) return R1_LIFT_OFF_CODES.find(([value]) => value === code)?.[1] ?? null;
     const millimetres = atkDecodeLiftOff(code);
     if (millimetres === null) return null;
     if (millimetres < 1) return "Low";
@@ -1359,7 +1452,8 @@ export class AtkHidClient {
   }
 
   private supportsLiftOffScale(): boolean {
-    return this.product?.sensor === "PAW3950Ultra" || this.product?.sensor === "PAW3955Master";
+    const sensor = this.sensorKey();
+    return sensor === "PAW3950Ultra" || sensor === "PAW3955Master";
   }
 
   private liftOffScale(code: number): MouseStatus["liftOffScale"] {
@@ -1488,7 +1582,40 @@ export class AtkHidClient {
       return;
     }
     this.identified = true;
-    this.product = ATK_PRODUCTS[`${reply[DATA_OFFSET]},${reply[DATA_OFFSET + 1]}`] ?? null;
+    this.cidMid = `${reply[DATA_OFFSET]},${reply[DATA_OFFSET + 1]}`;
+    this.product = ATK_PRODUCTS[this.cidMid] ?? null;
+  }
+
+  /**
+   * Resolve the vendor catalog entry for this device, caching per CID/MID key
+   * so a later identification refreshes a USB-id-only lookup. Works without a
+   * CID/MID reply, so USB-id-only devices still get their feature set.
+   */
+  private resolveCatalog(): void {
+    if (this.catalogResolved && this.catalogResolvedFor === this.cidMid) return;
+    this.catalogResolved = true;
+    this.catalogResolvedFor = this.cidMid;
+    this.catalog = atkCatalogDevice(this.device.vendorId, this.device.productId, this.cidMid) ?? null;
+  }
+
+  /** Vendor catalog entry for this device, or null when it is unlisted. */
+  private catalogEntry(): AtkDeviceDescriptor | null {
+    this.resolveCatalog();
+    return this.catalog;
+  }
+
+  /** Vendor capability flags for this device; empty when unlisted. */
+  private features(): AtkDeviceFeatures {
+    return this.catalogEntry()?.features ?? {};
+  }
+
+  /**
+   * Sensor driving DPI limits and encoding: the verified hand-built product
+   * sensor wins, otherwise the catalog sensor fills in for newly covered mice.
+   */
+  private sensorKey(): AtkSensor | null {
+    if (this.product) return this.product.sensor;
+    return atkCatalogSensorToSensor(this.catalogEntry()?.sensor ?? null);
   }
 
   private usesSharedR1Transport(): boolean {
