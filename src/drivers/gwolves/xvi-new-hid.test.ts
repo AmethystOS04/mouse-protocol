@@ -22,6 +22,8 @@ function xviNewDevice(productId: number, { asleep = false, pollingCode = 128, ig
     debounce: [2, 5, 35],
     motionSync: 0,
     angleSnap: 1,
+    // [type, code] per slot; Forward starts on a DPI action (type 7).
+    buttons: [[1, 1], [1, 2], [1, 4], [1, 8], [7, 0]],
   };
   const sent: Uint8Array[] = [];
   let reply = new Uint8Array(64);
@@ -69,6 +71,16 @@ function xviNewDevice(productId: number, { asleep = false, pollingCode = 128, ig
     if (cls === 1 && command === 9) state.motionSync = request[7]!;
     if (cls === 1 && command === 132) out[7] = state.angleSnap;
     if (cls === 1 && command === 4) state.angleSnap = request[7]!;
+    if (cls === 3 && command === 128) {
+      // Button query: slot arrives 1-based, type reports at [9], code at [11].
+      const slot = request[7]! - 1;
+      out[9] = state.buttons[slot]?.[0] ?? 255;
+      out[11] = state.buttons[slot]?.[1] ?? 0;
+    }
+    if (cls === 3 && command === 0) {
+      // Remap write: slot arrives 0-based, [type, len, ...data].
+      state.buttons[request[7]!] = [request[9]!, request[11] ?? 0];
+    }
     // Every command takes the profile byte except firmware and battery.
     if (!(cls === 0 && (command === 129 || command === 131))) assert.equal(profile, 1);
     return out;
@@ -130,7 +142,10 @@ test("reads status through profile-addressed commands", async () => {
   assert.equal(status.angleSnapping, true);
   assert.deepEqual(status.firmware, ["Mouse 1.2.3.4"]);
   assert.deepEqual(status.supportedPollingRates, [125, 250, 500, 1000, 2000, 4000, 8000]);
-  assert.equal(status.buttonMappings, undefined);
+  assert.deepEqual(status.buttonMappings, {
+    Left: "Left Click", Right: "Right Click", Middle: "Middle Click", Back: "Backward", Forward: "Custom",
+  });
+  assert.deepEqual(status.buttonOptions, ["Left Click", "Right Click", "Middle Click", "Backward", "Forward", "Disable"]);
 });
 
 test("writes DPI, polling, lift-off, sleep, debounce and toggles with read-back", async () => {
@@ -183,4 +198,27 @@ test("an ignored write fails on read-back rather than lying", async () => {
   await assert.rejects(client.setDpi(1200), /kept 800 DPI instead of 1200 DPI/);
   await assert.rejects(client.setPollingRate(2000), /kept 8000 Hz instead of 2000 Hz/);
   await assert.rejects(client.setDpi(999999), /50-30,000/);
+});
+
+test("remaps plain clicks with the vendor's type/code framing", async () => {
+  const { device, state, sent } = xviNewDevice(0x3608);
+  const client = new GWolvesXviNewHidClient(device);
+
+  // Reads address the slot 1-based with the query shape.
+  await client.setButtonMapping("Forward", "Forward");
+  assert.deepEqual(state.buttons[4], [1, 16]);
+  const query = sent.find((packet) => packet[5] === 128 && packet[7] === 5)!;
+  assert.deepEqual([...query.slice(2, 11)], [2, 15, 3, 128, 1, 5, 0, 255, 10]);
+  const write = sent.find((packet) => packet[5] === 0)!;
+  assert.deepEqual([...write.slice(2, 12)], [2, 6, 3, 0, 1, 4, 0, 1, 1, 16]);
+
+  await client.setButtonMapping("Back", "Disable");
+  assert.deepEqual(state.buttons[3], [0, 0]);
+  const disableWrites = sent.filter((packet) => packet[5] === 0);
+  const disableWrite = disableWrites[disableWrites.length - 1]!;
+  assert.deepEqual([...disableWrite.slice(2, 11)], [2, 5, 3, 0, 1, 3, 0, 0, 0]);
+
+  await assert.rejects(client.setButtonMapping("Left", "Right Click"), /Keep at least one button as Left Click/);
+  await assert.rejects(client.setButtonMapping("DPI", "DPI Loop"), /has no "DPI" button/);
+  await assert.rejects(client.setButtonMapping("Left", "Macro 1"), /Unknown button action/);
 });

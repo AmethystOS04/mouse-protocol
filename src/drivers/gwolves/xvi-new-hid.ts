@@ -19,10 +19,10 @@ import { GWOLVES_PRODUCTS, GWOLVES_VENDOR_ID, type GWolvesProduct } from "./prod
 //   quirk in getPollingRate). What is NOT confirmed is how real firmware
 //   answers: all four entries stay `verified: false`, and every setter
 //   re-reads and throws on mismatch, so a wrong guess fails loudly.
-// - Button remapping is intentionally absent: the new-framing
-//   GetButton/SetButton table layout (type at reply[10], modifier/key at
-//   [12]/[13]) is only half-decoded, and guessing at it could silently
-//   remap the wrong button. Same for macros, RGB, and the tracking /
+// - Button remapping covers plain clicks and Disable, decoded from the
+//   vendor's $e action encoder and reply layout. DPI/macros/media need
+//   table layouts this bundle leaves half-decoded (and its MS-macro writers
+//   are stubs), so those read back as Custom. Same for the tracking /
 //   polling-info / angle-tune / hyper / competitive / combine / DPI-XY
 //   toggles, which exist in the vendor code but are not needed for the core
 //   settings surface.
@@ -47,6 +47,20 @@ const POLLING_CODES: ReadonlyMap<number, number> = new Map([
 // All four xvi-new models top out at 30K DPI with 0.7/1/2 mm lift-off, and
 // all ship 8K dongles (wired also runs to 8K), so every rate is offered on
 // both paths — unlike the older generation's 1K-wired/1K-ACE limits.
+// Button remapping covers plain clicks and Disable only, mirroring the
+// older XVI driver's action set. The vendor encodes a remap as
+// SetButton(profile, slot-0-based, type, data, len) →
+// `[2, 5+len, 3, 0, profile, slot, 0, type, len, ...data]`, with clicks as
+// type 1 / bitmask code (1, 2, 4, 8, 16) and Disable as type 0 with no
+// data; reads use the query shape (type 255, len 10) and decode the type at
+// reply[9] with the value at reply[11]. DPI/macros/media need table layouts
+// this bundle leaves half-decoded, so they stay out (read back as Custom).
+const BUTTONS = ["Left", "Right", "Middle", "Back", "Forward"];
+const BUTTON_ACTIONS: ReadonlyMap<string, number> = new Map([
+  ["Left Click", 1], ["Right Click", 2], ["Middle Click", 4], ["Backward", 8], ["Forward", 16],
+]);
+const BUTTON_QUERY_TYPE = 255;
+const BUTTON_QUERY_LEN = 10;
 const DPI_STEP = 50;
 const DPI_MAX = 30_000;
 const LOD_LEVELS = ["Low", "Medium", "High"] as const;
@@ -59,6 +73,7 @@ const DEBOUNCE_MAX_MS = 50;
 
 const enum XviNewCommand {
   setPolling = 0,
+  setButton = 0,
   setDpiStages = 1,
   setActiveDpi = 2,
   setSleep = 7,
@@ -82,6 +97,7 @@ const enum XviNewCommand {
   getRipple = 138,
   getHyper = 139,
   getFirmware = 129,
+  getButton = 128,
   getDebounce = 136,
   setDebounce = 8,
 }
@@ -159,6 +175,7 @@ export class GWolvesXviNewHidClient {
     const debounce = await this.optional(() => this.readDebounceTimings());
     const motionSync = await this.optional(() => this.readFlag(XviNewCommand.getMotionSync));
     const angleSnapping = await this.optional(() => this.readFlag(XviNewCommand.getAngleSnap));
+    const buttons = await this.optional(() => this.readButtons());
     const charging = battery[6] === 1;
     const percent = battery[7] ?? 0;
 
@@ -182,6 +199,7 @@ export class GWolvesXviNewHidClient {
       liftOffDistance,
       supportedLiftOffDistances: [...LOD_LEVELS],
       firmware: firmware ? [`Mouse ${firmware}`] : [],
+      ...(buttons ? { buttonMappings: this.decodeButtons(buttons), buttonOptions: [...BUTTON_ACTIONS.keys(), "Disable"] } : {}),
       ui: {
         family: "gwolves-xvi",
         hideUnsupportedPollingRates: true,
@@ -258,6 +276,54 @@ export class GWolvesXviNewHidClient {
 
   async setAngleSnapping(enabled: boolean): Promise<boolean> {
     return this.writeFlag(XviNewCommand.setAngleSnap, XviNewCommand.getAngleSnap, enabled, "angle snapping");
+  }
+
+  /** Rewrites one button slot; clicks and Disable only (see above). */
+  async setButtonMapping(button: string, action: string): Promise<void> {
+    const index = BUTTONS.indexOf(button);
+    if (index < 0) throw new Error(`The ${this.product.model} has no "${button}" button.`);
+    const table = await this.readButtons();
+    const current = this.decodeButtons(table);
+    if (action !== "Disable" && !BUTTON_ACTIONS.has(action)) {
+      throw new Error(`Unknown button action "${action}".`);
+    }
+    current[button] = action;
+    if (!Object.values(current).includes("Left Click")) {
+      throw new Error("Keep at least one button as Left Click.");
+    }
+    if (action === "Disable") {
+      await this.transact(xviNewFrame(5, 3, XviNewCommand.setButton, [index, 0, 0, 0]));
+    } else {
+      const code = BUTTON_ACTIONS.get(action)!;
+      await this.transact(xviNewFrame(6, 3, XviNewCommand.setButton, [index, 0, 1, 1, code]));
+    }
+    const confirmed = this.decodeButtons(await this.readButtons())[button];
+    if (confirmed !== action) throw new Error(`The ${this.product.model} kept ${confirmed} on ${button} instead of ${action}.`);
+  }
+
+  private decodeButtons(table: Uint8Array): Record<string, string> {
+    const labels = new Map([...BUTTON_ACTIONS].map(([label, code]) => [code, label]));
+    return Object.fromEntries(BUTTONS.map((name, slot) => {
+      const type = table[slot * 2]!;
+      const code = table[slot * 2 + 1]!;
+      if (type === 0) return [name, "Disable"];
+      if (type === 1) return [name, labels.get(code) ?? "Custom"];
+      return [name, "Custom"];
+    }));
+  }
+
+  /** One [type, code] pair per slot, read with the query shape. */
+  private async readButtons(): Promise<Uint8Array> {
+    const table = new Uint8Array(BUTTONS.length * 2);
+    for (let slot = 0; slot < BUTTONS.length; slot += 1) {
+      // Reads address the slot 1-based while writes are 0-based.
+      const reply = await this.transact(
+        xviNewFrame(15, 3, XviNewCommand.getButton, [slot + 1, 0, BUTTON_QUERY_TYPE, BUTTON_QUERY_LEN]),
+      );
+      table[slot * 2] = reply[9] ?? 255;
+      table[slot * 2 + 1] = reply[11] ?? 0;
+    }
+    return table;
   }
 
   private async optional<T>(read: () => Promise<T>): Promise<T | null> {

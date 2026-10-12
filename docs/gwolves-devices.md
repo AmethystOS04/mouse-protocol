@@ -71,10 +71,12 @@ with replies one slot later — decoded from the vendor bundle
 `static/js/index-CQtWXKWS.js`, class `cm` with `isNewProtocol == "1"`).
 Exposes firmware, battery, DPI stages (50–30,000), polling 125–8000 on
 both paths, lift-off (Low/Medium/High = 0.7/1/2 mm), sleep, debounce,
-motion sync and angle snapping. Every setter re-reads and throws on
-mismatch. Button remapping, macros, RGB and the tracking / polling-info /
-angle-tune / hyper / competitive / combine / DPI-XY toggles are not mapped
-yet. Recognition-grade throughout — no xvi-new hardware has been tested.
+motion sync, angle snapping, and plain-click/Disable remapping (decoded
+from the vendor's action encoder; DPI/macros/media read back as Custom).
+Every setter re-reads and throws on mismatch. Tracking / polling-info /
+angle-tune / hyper / competitive / combine / DPI-XY toggles and RGB are
+not mapped yet. Recognition-grade throughout — no xvi-new hardware has
+been tested.
 
 | Mouse | Wired PID | Receiver PID | Max DPI | Polling max |
 |---|---|---|---|---|
