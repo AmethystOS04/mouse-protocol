@@ -10,4 +10,5 @@ export * from "./aerox9-wireless.js";
 export * from "./prime-plus.js";
 export * from "./prime-mini-wireless.js";
 export * from "./sensei-ten.js";
+export * from "./sensei-310.js";
 export * from "./devices.js";
