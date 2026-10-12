@@ -50,17 +50,17 @@
  * The Prime+ (`0x182C`, family `"prime-plus"`) is its own family per this
  * rollout's per-cluster scoping, even though — see `./prime-plus.ts`'s doc
  * comment for the full corroboration-gap disclosure — its rivalcfg profile
- * (`prime_plus.py`) is byte-identical to plain Prime's (`prime.py`, PIDs
- * `0x182E`/`0x182A`/`0x1856`, none of which are listed here: plain/non-Plus
- * Prime is out of scope for this cluster and deliberately not added).
+ * (`prime_plus.py`) is byte-identical to plain Prime's (`prime.py`). The
+ * plain Prime PIDs (`0x182E`, plus `0x182A`/`0x1856`) reuse this family's
+ * codec; no separate module exists.
  *
  * The Prime Mini Wireless (`"prime-mini-wireless"`, PIDs `0x184A` wired /
  * `0x1848` 2.4 GHz — see `./prime-mini-wireless.ts`) is its own family for
  * the same reason: rivalcfg documents it and the plain (non-Mini) Prime
  * Wireless as one shared `settings` dict inside
- * `prime_wireless_wired.py`/`prime_wireless_wireless.py`, but the plain
- * Prime Wireless's PIDs (`0x1842` wired / `0x1840` 2.4 GHz) are out of scope
- * for this cluster and deliberately not added here.
+ * `prime_wireless_wired.py`/`prime_wireless_wireless.py`. The plain Prime
+ * Wireless's PIDs (`0x1842` wired / `0x1840` 2.4 GHz) reuse this family's
+ * codec; no separate module exists.
  */
 
 export const STEELSERIES_VENDOR_ID = 0x1038;
@@ -311,6 +311,34 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     hasFirmwareQuery: false,
     verified: false,
   }],
+  // prime.py is byte-identical to prime_plus.py (same sensitivity 0x61,
+  // polling 0x5D, color, brightness, buttons 0x5B, save 0x59 — verified by
+  // direct comparison when prime-plus.ts was written), so these PIDs reuse
+  // the Prime+ codec with no new module.
+  [0x182e, {
+    model: "Prime",
+    family: "prime-plus",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
+    verified: false,
+  }],
+  [0x182a, {
+    model: "Prime 6 Siege Black Ice Edition",
+    family: "prime-plus",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
+    verified: false,
+  }],
+  [0x1856, {
+    model: "Prime CS:GO Neo Noir Edition",
+    family: "prime-plus",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
+    verified: false,
+  }],
   // rival310.py: wired only, endpoint 0. Own command set (0x53/0x54/0x5B/
   // 0x31), a linear (non-table) DPI encoding, and a readable firmware
   // version behind 0x90 00 — see ./rival310.ts's doc comment, including its
@@ -356,6 +384,27 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
   // byte 0 (see ./prime-mini-wireless.ts's `applyWirelessFlag`).
   [0x1848, {
     model: "Prime Mini Wireless (2.4 GHz mode)",
+    family: "prime-mini-wireless",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
+    verified: false,
+  }],
+  // The plain (non-Mini) Prime Wireless shares the Prime Mini Wireless
+  // command set byte-for-byte (one shared `settings` dict in
+  // `prime_wireless_wired.py` / `prime_wireless_wireless.py`, confirmed
+  // against the vendor's own GG device specification), so these PIDs reuse
+  // the Prime Mini Wireless codec with no new module.
+  [0x1842, {
+    model: "Prime Wireless (wired mode)",
+    family: "prime-mini-wireless",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
+    verified: false,
+  }],
+  [0x1840, {
+    model: "Prime Wireless (2.4 GHz mode)",
     family: "prime-mini-wireless",
     wireless: true,
     settingsReadable: false,
