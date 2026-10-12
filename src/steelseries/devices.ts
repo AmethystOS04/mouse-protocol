@@ -77,7 +77,8 @@ export type SteelSeriesProtocolFamily =
   | "aerox9-wireless"
   | "prime-plus"
   | "prime-mini-wireless"
-  | "sensei-ten";
+  | "sensei-ten"
+  | "rival-5";
 
 export interface SteelSeriesProduct {
   model: string;
@@ -378,6 +379,18 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
   [0x1834, {
     model: "Sensei TEN CS:GO Neon Rider Edition",
     family: "sensei-ten",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // rival-5.lisp (vendor GG specification): wired only. Own command set
+  // (DPI batch 0x2D with TrueMove Air bytes, polling 0x2B, 11-slot buttons
+  // 0x2A, 10-zone lighting, firmware 0x90) — see ./rival-5.ts. No
+  // rivalcfg profile exists for this mouse.
+  [0x183c, {
+    model: "Rival 5",
+    family: "rival-5",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
