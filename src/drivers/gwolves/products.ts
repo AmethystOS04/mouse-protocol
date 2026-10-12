@@ -21,8 +21,10 @@ export interface GWolvesProduct {
    * - "xvi": XVI 1 with IsNewProtocol 0, the 64-byte feature-report protocol
    *   GWolvesXviHidClient speaks (HTX Mini 8K and most older models).
    * - "xvi-new": XVI 1 with IsNewProtocol 1. Same transport as "xvi" but
-   *   polling, battery and lift-off move to profile-addressed commands, which
-   *   no driver here implements yet.
+   *   polling, battery and lift-off move to profile-addressed commands,
+   *   spoken by GWolvesXviNewHidClient (decoded from the vendor bundle, not
+   *   yet confirmed on hardware — every setter re-reads and throws on
+   *   mismatch so a wrong guess fails loudly).
    */
   protocol: "gwolves" | "xvi" | "xvi-new";
   /** Left and right buttons are magnetic switches with trigger point and rapid trigger (HTS Plus Pro). */

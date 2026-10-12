@@ -63,14 +63,18 @@ yet). No ripple control on any XVI model (matches the vendor page).
 | HTX ACE | 0x5704 / 0x5703 (1K) | 26,000 | 1000 | recognition-grade |
 | HSK Plus ACE | 0x5904 / 0x5903 (1K) | 26,000 | 1000 | recognition-grade |
 
-## XVI:1 new protocol — no driver yet
+## XVI:1 new protocol — GWolvesXviNewHidClient (`gwolves/xvi-new-hid`)
 
-Same 64-byte feature-report transport as XVI:1-old, but polling, battery
-and lift-off move to profile-addressed commands (profile byte at frame
-index 6, replies shifted one slot — decoded from the vendor bundle
-`static/js/index-CQtWXKWS.js`, class `cm`). Deliberately kept out of the
-WebHID filters until a driver implements them; that is why these receivers
-report "No compatible devices found" (OpenMouse-Project/openmouse#777).
+Same 64-byte feature-report transport as XVI:1-old, but sensor commands
+move to profile-addressed frames (`[2, len, class, cmd, profile, ...]`
+with replies one slot later — decoded from the vendor bundle
+`static/js/index-CQtWXKWS.js`, class `cm` with `isNewProtocol == "1"`).
+Exposes firmware, battery, DPI stages (50–30,000), polling 125–8000 on
+both paths, lift-off (Low/Medium/High = 0.7/1/2 mm), sleep, debounce,
+motion sync and angle snapping. Every setter re-reads and throws on
+mismatch. Button remapping, macros, RGB and the tracking / polling-info /
+angle-tune / hyper / competitive / combine / DPI-XY toggles are not mapped
+yet. Recognition-grade throughout — no xvi-new hardware has been tested.
 
 | Mouse | Wired PID | Receiver PID | Max DPI | Polling max |
 |---|---|---|---|---|
