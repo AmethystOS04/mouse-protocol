@@ -81,12 +81,10 @@ An exported protocol means OpenMouse implements that wire format. It does not
 claim every mouse from that brand works. When a catalog provides a `verified`
 field, use it to distinguish hardware-tested support from USB recognition.
 
-LunaFury LUNA33 and TYPE33 use the shared Lamzu/CompX driver and the
-`@openmouse/protocol/lamzu` entry point. The owner tested LUNA33 firmware
-`0.0.26.0` over cable and the 8K receiver. TYPE33 and the new bottom-button
-power/DPI behavior still need hardware testing. See
-[docs/lunafury-testing.md](docs/lunafury-testing.md) for packet evidence,
-the verified feature list and the hardware checklist.
+LunaFury uses the shared Lamzu/CompX driver at `@openmouse/protocol/lamzu`.
+LUNA33 firmware `0.0.26.0` has owner-confirmed cable/8K coverage; TYPE33 and
+bottom-button behavior are not hardware-verified. See the
+[support and testing notes](docs/lunafury-testing.md) for the verified scope.
 
 The Ninjutso catalog and packet layouts are derived from the JavaScript shipped
 by the official NinjaForce WebHID panel. They have automated transport and
