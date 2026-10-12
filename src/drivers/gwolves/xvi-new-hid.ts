@@ -20,7 +20,9 @@ import { GWOLVES_PRODUCTS, GWOLVES_VENDOR_ID, type GWolvesProduct } from "./prod
 //   answers: all four entries stay `verified: false`, and every setter
 //   re-reads and throws on mismatch, so a wrong guess fails loudly.
 // - Button remapping covers plain clicks and Disable, decoded from the
-//   vendor's $e action encoder and reply layout. DPI/macros/media need
+//   vendor's $e action encoder and reply layout (slots 1-based for both
+//   reads and writes — a 0-based write lands on the wrong button and reads
+//   back unchanged, confirmed against live hardware). DPI/macros/media need
 //   table layouts this bundle leaves half-decoded (and its MS-macro writers
 //   are stubs), so those read back as Custom. Same for the tracking /
 //   polling-info / angle-tune / hyper / competitive / combine / DPI-XY
@@ -200,12 +202,15 @@ export class GWolvesXviNewHidClient {
       supportedLiftOffDistances: [...LOD_LEVELS],
       firmware: firmware ? [`Mouse ${firmware}`] : [],
       ...(buttons ? { buttonMappings: this.decodeButtons(buttons), buttonOptions: [...BUTTON_ACTIONS.keys(), "Disable"] } : {}),
+      dpiStages: stages.map(([x]) => x),
+      activeDpiStage: active - 1,
       ui: {
         family: "gwolves-xvi",
         hideUnsupportedPollingRates: true,
         hideRippleControl: true,
         forceShowBattery: false,
         defaultDisplayName: `G-Wolves ${model}`,
+        dpiStageEditor: { maxStages: MAX_STAGES, countEditable: false, minDpi: DPI_STEP, maxDpi: DPI_MAX, stepDpi: DPI_STEP },
       },
     };
   }
@@ -291,14 +296,48 @@ export class GWolvesXviNewHidClient {
     if (!Object.values(current).includes("Left Click")) {
       throw new Error("Keep at least one button as Left Click.");
     }
+    // Slots are 1-based on the wire for both reads and writes (confirmed
+    // against live hardware: a 0-based write lands on the wrong button and
+    // reads back unchanged).
+    const slot = index + 1;
     if (action === "Disable") {
-      await this.transact(xviNewFrame(5, 3, XviNewCommand.setButton, [index, 0, 0, 0]));
+      await this.transact(xviNewFrame(5, 3, XviNewCommand.setButton, [slot, 0, 0, 0]));
     } else {
       const code = BUTTON_ACTIONS.get(action)!;
-      await this.transact(xviNewFrame(6, 3, XviNewCommand.setButton, [index, 0, 1, 1, code]));
+      await this.transact(xviNewFrame(6, 3, XviNewCommand.setButton, [slot, 0, 1, 1, code]));
     }
     const confirmed = this.decodeButtons(await this.readButtons())[button];
     if (confirmed !== action) throw new Error(`The ${this.product.model} kept ${confirmed} on ${button} instead of ${action}.`);
+  }
+
+  /** Writes one DPI stage value (0-based), preserving a split X/Y stage. */
+  async setDpiStageValue(stage: number, dpi: number): Promise<number> {
+    if (!Number.isInteger(dpi) || dpi < DPI_STEP || dpi > DPI_MAX || dpi % DPI_STEP !== 0) {
+      throw new Error(`The ${this.product.model} takes 50-30,000 DPI in steps of 50.`);
+    }
+    const { stages } = await this.readDpiStages();
+    if (stage < 0 || stage >= stages.length) throw new Error(`This mouse does not have a DPI stage ${stage + 1}.`);
+    const bytes = stages.flatMap(([x, yy], at) => {
+      const next = at === stage ? dpi : x;
+      const keepY = at === stage ? (yy === x ? dpi : yy!) : yy!;
+      return [next >> 8, next & 0xff, keepY >> 8, keepY & 0xff];
+    });
+    await this.transact(xviNewFrame(30, 1, XviNewCommand.setDpiStages, [stages.length, ...bytes]));
+    const confirmed = (await this.readDpiStages()).stages[stage]?.[0];
+    if (confirmed !== dpi) throw new Error(`The ${this.product.model} kept ${confirmed ?? "an unknown"} DPI on stage ${stage + 1} instead of ${dpi} DPI.`);
+    return confirmed;
+  }
+
+  /** Selects the active DPI stage (0-based). */
+  async setActiveDpiStage(stage: number): Promise<number> {
+    const { stages } = await this.readDpiStages();
+    if (!Number.isInteger(stage) || stage < 0 || stage >= stages.length) {
+      throw new Error(`This mouse does not have a DPI stage ${stage + 1}.`);
+    }
+    await this.transact(xviNewFrame(2, 1, XviNewCommand.setActiveDpi, [stage + 1]));
+    const confirmed = ((await this.transact(xviNewFrame(2, 1, XviNewCommand.getActiveDpi)))[7] ?? 1) - 1;
+    if (confirmed !== stage) throw new Error(`The ${this.product.model} kept DPI stage ${confirmed + 1} active instead of stage ${stage + 1}.`);
+    return confirmed;
   }
 
   private decodeButtons(table: Uint8Array): Record<string, string> {
@@ -312,7 +351,7 @@ export class GWolvesXviNewHidClient {
     }));
   }
 
-  /** One [type, code] pair per slot, read with the query shape. */
+  /** One [type, code] pair per slot; slots are 1-based on the wire. */
   private async readButtons(): Promise<Uint8Array> {
     const table = new Uint8Array(BUTTONS.length * 2);
     for (let slot = 0; slot < BUTTONS.length; slot += 1) {

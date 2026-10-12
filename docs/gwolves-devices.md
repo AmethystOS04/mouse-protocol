@@ -69,14 +69,17 @@ Same 64-byte feature-report transport as XVI:1-old, but sensor commands
 move to profile-addressed frames (`[2, len, class, cmd, profile, ...]`
 with replies one slot later — decoded from the vendor bundle
 `static/js/index-CQtWXKWS.js`, class `cm` with `isNewProtocol == "1"`).
-Exposes firmware, battery, DPI stages (50–30,000), polling 125–8000 on
+Exposes firmware, battery, DPI stages (50–30,000) with the real on-device
+stage table and active stage (fixed count), polling 125–8000 on
 both paths, lift-off (Low/Medium/High = 0.7/1/2 mm), sleep, debounce,
 motion sync, angle snapping, and plain-click/Disable remapping (decoded
-from the vendor's action encoder; DPI/macros/media read back as Custom).
-Every setter re-reads and throws on mismatch. Tracking / polling-info /
-angle-tune / hyper / competitive / combine / DPI-XY toggles and RGB are
-not mapped yet. Recognition-grade throughout — no xvi-new hardware has
-been tested.
+from the vendor's action encoder; slots are 1-based for both reads and
+writes — a 0-based write lands on the wrong button and reads back
+unchanged, confirmed against live hardware on a Fenrir Pro 0x3617).
+DPI/macros/media actions read back as Custom. Every setter re-reads and
+throws on mismatch. Tracking / polling-info / angle-tune / hyper /
+competitive / combine / DPI-XY toggles and RGB are not mapped yet.
+Recognition-grade throughout — no xvi-new hardware has been tested.
 
 | Mouse | Wired PID | Receiver PID | Max DPI | Polling max |
 |---|---|---|---|---|
