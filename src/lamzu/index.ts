@@ -1,6 +1,9 @@
 export * from "../compx/codec.js";
 export * from "./atlantis.js";
 export * from "./lunafury.js";
+export * from "./lunafury-power.js";
+export * from "./lunafury-onboard.js";
+export * from "./lunafury-buttons.js";
 export * from "./magnetic.js";
 export interface LamzuProduct {
   model: string;

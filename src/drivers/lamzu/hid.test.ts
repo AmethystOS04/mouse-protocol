@@ -302,7 +302,9 @@ test("LunaFury LUNA33 and TYPE33 use the CompX driver with their own brand", asy
     } else {
       const dongleFirmware = sent.filter((packet) =>
         packet[2] === 0x00 && packet[4] === 0x00 && packet[5] === 0x81);
-      const mouseRequests = sent.filter((packet) => !dongleFirmware.includes(packet));
+      const lightReads = sent.filter((packet) => packet[4] === 2 && packet[5] === 0x80);
+      assert.ok(lightReads.every((packet) => packet[2] === (productId === 0x0084 ? 1 : 0)));
+      const mouseRequests = sent.filter((packet) => !dongleFirmware.includes(packet) && !lightReads.includes(packet));
       assert.equal(dongleFirmware.length, 1);
       assert.ok(mouseRequests.length > 0);
       assert.ok(mouseRequests.every((packet) => packet[2] === 0x02));

@@ -356,6 +356,8 @@ export interface MouseStatus {
   motionSync?: boolean | null;
   /** On-device DPI stages, where supported (Teevolution, Ninjutso, …). */
   dpiStages?: number[];
+  /** Per-stage Y DPI on devices that support independently stored axes. */
+  dpiStagesY?: number[];
   /** RGB colour for each DPI stage, as lowercase #rrggbb. */
   dpiStageColors?: string[];
   /** Active DPI stage index into `dpiStages` (0-based). */

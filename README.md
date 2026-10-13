@@ -58,7 +58,7 @@ checklist.
 | Incott | `@openmouse/protocol/incott` |
 | K-snake | `@openmouse/protocol/ksnake` |
 | Keychron | `@openmouse/protocol/keychron` |
-| Lamzu / CRDRAKO / Attack Shark | `@openmouse/protocol/lamzu` |
+| Lamzu / CRDRAKO / Attack Shark / LunaFury | `@openmouse/protocol/lamzu` |
 | Logitech | `@openmouse/protocol/logitech` |
 | MCHOSE | `@openmouse/protocol/mchose` |
 | Microsoft | `@openmouse/protocol/microsoft` |
@@ -83,6 +83,11 @@ checklist.
 An exported protocol means OpenMouse implements that wire format. It does not
 claim every mouse from that brand works. When a catalog provides a `verified`
 field, use it to distinguish hardware-tested support from USB recognition.
+
+LunaFury uses the shared Lamzu/CompX driver at `@openmouse/protocol/lamzu`.
+LUNA33 firmware `0.0.26.0` has owner-confirmed cable/8K coverage; TYPE33 and
+bottom-button behavior are not hardware-verified. See the
+[support and testing notes](docs/lunafury-testing.md) for the verified scope.
 
 The Ninjutso catalog and packet layouts are derived from the JavaScript shipped
 by the official NinjaForce WebHID panel. They have automated transport and
