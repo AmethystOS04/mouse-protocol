@@ -67,6 +67,7 @@ export const STEELSERIES_VENDOR_ID = 0x1038;
 
 export type SteelSeriesProtocolFamily =
   | "rival3"
+  | "aerox3-wireless-gen2"
   | "rival310"
   | "aerox3"
   | "aerox3-wireless"
@@ -155,6 +156,26 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     settingsReadable: false,
     hasFirmwareQuery: false,
     verified: true,
+  }],
+  // aerox_3_wireless_gen2 (vendor GG specification): Gen 2 shares nothing
+  // with the Gen 1 command set beyond the name — raw-uint16 XY DPI with
+  // per-preset lift-off, split wired/wireless polling to 4000 Hz. See
+  // ./aerox-3-wireless-gen2.ts. Mouse (USB-cabled) and 2.4 GHz dongle modes.
+  [0x1892, {
+    model: "Aerox 3 Wireless Gen 2 (wired mode)",
+    family: "aerox3-wireless-gen2",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1890, {
+    model: "Aerox 3 Wireless Gen 2 (2.4 GHz mode)",
+    family: "aerox3-wireless-gen2",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
   }],
   [0x1878, {
     model: "Aerox 3 Wireless CS2 Dragon Lore Edition (2.4 GHz mode)",
