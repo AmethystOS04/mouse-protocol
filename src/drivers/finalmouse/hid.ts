@@ -157,13 +157,21 @@ export class FinalmouseHidClient {
         defaultDisplayName: slx ? FINALMOUSE_SLX_DISPLAY_NAME : FINALMOUSE_DISPLAY_NAME,
         hideUnsupportedPollingRates: true,
         forceShowBattery: true,
+        // Starlight X runs PerfectPolling: a fixed-rate pipeline with no
+        // selectable polling rate and no user-facing Motion Sync, so the app
+        // must not offer either as if they were adjustable. Ultralight X
+        // exposes both.
+        pollingReadOnly: slx ? true : undefined,
+        hideMotionSync: slx ? true : undefined,
       },
       batteryPercent: state.batterySoc ?? state.batteryPercent ?? null,
       batteryVoltageMv: state.batteryVoltageMv ?? null,
       batteryState: state.chargingState === 1 ? "Charging" : state.chargingState === undefined ? "Unknown" : "Discharging",
       dpi: state.dpi,
       pollingRateHz: state.pollingRateHz,
-      supportedPollingRates: [...POLLING_RATES],
+      // Starlight X: PerfectPolling is fixed, so it advertises no selectable
+      // rates. Ultralight X lists the whole ladder.
+      supportedPollingRates: [...this.supportedPollingRates],
       activeProfile: null,
       unitId: state.mouseSerial ?? null,
       connectionType: "Wireless",
@@ -242,10 +250,21 @@ export class FinalmouseHidClient {
   }
 
   async setPollingRate(pollingRateHz: number): Promise<number> {
-    if (!(POLLING_RATES as readonly number[]).includes(pollingRateHz)) throw new Error("Unsupported Finalmouse UltralightX polling rate.");
+    const supported: readonly number[] = this.supportedPollingRates;
+    if (!supported.includes(pollingRateHz)) throw new Error("This Finalmouse dongle has no adjustable polling rate.");
     await this.writeU16(FINALMOUSE_COMMAND.pollingRate, pollingRateHz);
     this.telemetry.pollingRateHz = pollingRateHz;
     return pollingRateHz;
+  }
+
+  /**
+   * Rates this dongle accepts. The Ultralight X exposes the whole ladder; the
+   * Starlight X's PerfectPolling pipeline is fixed, so it offers none. The
+   * reported `pollingRateHz` is still surfaced for telemetry, but the app
+   * hides the selector (see `pollingReadOnly`).
+   */
+  private get supportedPollingRates(): readonly number[] {
+    return this.isSlx ? [] : POLLING_RATES;
   }
 
   async setMotionSync(enabled: boolean): Promise<boolean> {
