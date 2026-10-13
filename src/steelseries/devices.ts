@@ -67,6 +67,7 @@ export const STEELSERIES_VENDOR_ID = 0x1038;
 
 export type SteelSeriesProtocolFamily =
   | "rival3"
+  | "rival-100"
   | "rival310"
   | "aerox3"
   | "aerox3-wireless"
@@ -100,6 +101,62 @@ export interface SteelSeriesProduct {
 }
 
 export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new Map([
+  // rival-100.lisp (vendor GG specification): the first-gen "Rival 100 family"
+  // command set (DPI choice 0x03, polling 0x04, LED 0x05/0x07, button-6 mode
+  // 0x0B, save 0x09, firmware 0x10, no button remapping). Shared by the Rival
+  // 100, its special editions, and the Rival 105 — see ./rival-100.ts. This is
+  // NOT the Rival 110/106/300S table (different sensor).
+  [0x1702, {
+    model: "Rival 100",
+    family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // rival-100-pc-bang.lisp: same profile plus a `00 0E 01` pre-packet before
+  // the button-6 command (handled in the driver for this PID).
+  [0x1708, {
+    model: "Rival 100 PC Bang Edition",
+    family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x170a, {
+    model: "Rival 100 Dell China Edition",
+    family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x170b, {
+    model: "Rival 100 Dota 2 Edition (Retail)",
+    family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x170c, {
+    model: "Rival 100 Dota 2 Edition (Lenovo)",
+    family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // rival-105.lisp: includes rival-100 and adds the firmware query.
+  [0x1814, {
+    model: "Rival 105",
+    family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   // Pre-0.37 firmware enumeration.
   [0x1824, {
     model: "Rival 3",
