@@ -9,10 +9,12 @@
  * codec branches on product id.
  *
  * Only PIDs whose protocol has been traced to a public implementation belong
- * here. The Rival 3 Wireless Gen 2 (`0x1872`) and Rival 3 Gen 2 (`0x1870`)
- * are deliberately absent: their command sets are documented as different
- * from every family below, and listing them would claim devices this codec
- * would misprogram. The Rival 3 Wireless (`0x1830`) is present with family
+ * here. The Rival 3 Wireless Gen 2 (`0x1872`) is deliberately absent: its
+ * command set is documented as different from every family below, and
+ * listing it would claim a device this codec would misprogram. The Rival 3
+ * Gen 2 (`0x1870`) is present with family `"rival3-v2"` — its own module,
+ * `./rival-3-v2.ts`, with an XY DPI command no other family shares. The
+ * Rival 3 Wireless (`0x1830`) is present with family
  * `"rival3-wireless"` — its own module, `./rival3-wireless.ts`, distinct from
  * both Rival 3 Gen 1 and Aerox 3 (different command bytes throughout, a
  * different DPI sensor table, and, unlike either wired family, a readable
@@ -21,9 +23,9 @@
  * The Aerox 3 (`0x1836`, family `"aerox3"`) is a separate protocol family
  * from Rival 3 despite both being SteelSeries, single-byte vs. two-byte
  * command prefixes and all — see `./aerox3.ts`'s doc comment, including its
- * reconciliation of PR flozz/rivalcfg#269's Rival 3 Gen 2 claim (not added
- * here: its DPI command differs from Aerox 3's even though most other
- * commands match).
+ * reconciliation of PR flozz/rivalcfg#269's Rival 3 Gen 2 claim (shipped as
+ * its own `"rival3-v2"` family instead: its DPI command differs from
+ * Aerox 3's even though most other commands match).
  *
  * The Aerox 3 Wireless (`"aerox3-wireless"`, four PIDs across its USB-cabled
  * and 2.4 GHz dongle modes, see `./aerox3-wireless.ts`) shares nothing with
@@ -67,6 +69,7 @@ export const STEELSERIES_VENDOR_ID = 0x1038;
 
 export type SteelSeriesProtocolFamily =
   | "rival3"
+  | "rival3-v2"
   | "rival310"
   | "aerox3"
   | "aerox3-wireless"
@@ -114,6 +117,18 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
   [0x184c, {
     model: "Rival 3",
     family: "rival3",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // rival-3-v2 (vendor GG specification): wired only. Own command set (XY
+  // DPI 0x34, polling 0x2B, buttons 0x2A, RGB 0x21, save 0x11, firmware
+  // 0x90) — see ./rival-3-v2.ts. Must not reuse the Rival 3 Gen 1 or Aerox
+  // 3 modules despite the shared name.
+  [0x1870, {
+    model: "Rival 3 Gen 2",
+    family: "rival3-v2",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
