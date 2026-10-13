@@ -74,6 +74,7 @@ export type SteelSeriesProtocolFamily =
   | "aerox5"
   | "aerox5-wireless"
   | "rival650"
+  | "rival-600"
   | "aerox9-wireless"
   | "prime-plus"
   | "prime-mini-wireless"
@@ -259,6 +260,27 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     wireless: true,
     settingsReadable: false,
     hasFirmwareQuery: false,
+    verified: false,
+  }],
+  // rival-600.lisp (vendor GG specification): wired only. Own command set
+  // (sensitivity 0x03 per-level, polling 0x04, button feature report 0x31,
+  // proximity 0x96, save 0x09, firmware 0x10) — see ./rival-600.ts.
+  // Distinct from the Rival 650 Wireless despite the shared A3360 sensor.
+  [0x1724, {
+    model: "Rival 600",
+    family: "rival-600",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // dota2-rival-600.lisp includes rival-600.lisp unchanged.
+  [0x172e, {
+    model: "Rival 600 Dota 2 Edition",
+    family: "rival-600",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
     verified: false,
   }],
   // aerox9_wireless_wired.py: Aerox 9 Wireless in USB-cabled mode. Shares

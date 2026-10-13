@@ -6,6 +6,7 @@ export * from "./rival3-wireless.js";
 export * from "./aerox5.js";
 export * from "./aerox5-wireless.js";
 export * from "./rival650.js";
+export * from "./rival-600.js";
 export * from "./aerox9-wireless.js";
 export * from "./prime-plus.js";
 export * from "./prime-mini-wireless.js";
