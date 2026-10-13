@@ -279,11 +279,23 @@ export class WallhackMouseHidClient {
 
   async setDebounceTime(debounceMs: number): Promise<number> {
     // EXPERIMENTAL: vendor Terminal has no debounce path (`keyDebounceTime`
-    // absent from `Ar`/`O()`/auto-read); raw byte at 109, scale unverified.
+    // absent from `Ar`/`O()`/auto-read/UI/demo defaults); raw byte at 109,
+    // scale unverified. Prefer `readDebounceTime()` first and stay at the
+    // factory default until hardware confirms the unit. Cross-vendor bounds
+    // are 0-30 ms single-byte (Incott) or stepped tables (Rapoo 1-32 ms).
     if (!Number.isInteger(debounceMs) || debounceMs < WALLHACK_DEBOUNCE_MIN_MS || debounceMs > WALLHACK_DEBOUNCE_MAX_MS) {
       throw new Error(`WALLHACK debounce time must be between ${WALLHACK_DEBOUNCE_MIN_MS} and ${WALLHACK_DEBOUNCE_MAX_MS} ms.`);
     }
     return await this.writeVerifiedByte(WALLHACK_FLASH.keyDebounceTime, debounceMs, "debounce time", (value) => value === debounceMs).then(() => debounceMs);
+  }
+
+  /**
+   * Read-only debounce probe (safe): raw byte at function area 109, or
+   * null when the mouse stays silent. Run this on hardware first — the
+   * factory default constrains the scale (small int ⇒ ms-like).
+   */
+  async readDebounceTime(): Promise<number | null> {
+    return await this.readByte(WALLHACK_FLASH.keyDebounceTime);
   }
 
   async setSleepTimeout(minutes: number): Promise<number> {
