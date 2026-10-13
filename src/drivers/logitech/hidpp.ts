@@ -781,6 +781,10 @@ export class LogitechHidppClient {
     // also makes every input report unambiguous to the WebHID event handler.
     const name = await this.readName(nameFeature.index);
     const identity = await this.readIdentity(firmwareFeature.index);
+    // 0x8061's rate list is per link. The query below has to know which one
+    // before it asks, or a Lightspeed receiver is handed the wired 1 kHz list.
+    this.wiredConnection = isWiredHidppConnection(this.device.productId, identity.transportIds, this.isDirectConnect);
+    this.usbTransportId = identity.transportIds.USB ?? null;
     const battery = batteryFeature.index
       // Ordered by how directly each reports charge: 0x1004 and 0x1000 give a
       // percentage outright, while the voltage features only allow an estimate.
@@ -848,9 +852,7 @@ export class LogitechHidppClient {
       };
     }
     this.supportedLods = [...this.lodCapabilities.supportedLods];
-    const wired = isWiredHidppConnection(this.device.productId, identity.transportIds, this.isDirectConnect);
-    this.wiredConnection = wired;
-    this.usbTransportId = identity.transportIds.USB ?? null;
+    const wired = this.wiredConnection;
     this.lodCapabilities = {
       ...this.lodCapabilities,
       reportRates: reportRateCapabilitiesFor(onboardProfileFormat?.id, this.usbTransportId),
@@ -2309,14 +2311,14 @@ export class LogitechHidppClient {
         });
         result.decodedValues = decodeReportRateBitmap(listReply[3] ?? 0);
       } else {
-        const listReply = await this.request(result.featureIndex, 0x10);
+        const connection = this.reportRateConnection();
+        const listReply = await this.request(result.featureIndex, 0x10, connection);
         result.replies.push({ name: "getSupportedReportRates", bytes: listReply });
         result.replies.push({
           name: "getReportRate",
-          bytes: await this.request(result.featureIndex, 0x20),
+          bytes: await this.request(result.featureIndex, 0x20, connection),
         });
-        const flags = ((listReply[3] ?? 0) << 8) | (listReply[4] ?? 0);
-        result.decodedValues = REPORT_RATE_HZ.filter((_rate, index) => (flags & (1 << index)) !== 0);
+        result.decodedValues = this.decodeExtendedReportRateMask(listReply);
       }
     } catch (error) {
       result.error = error instanceof Error ? error.message : "Could not read report-rate capabilities.";
@@ -3329,11 +3331,37 @@ export class LogitechHidppClient {
     return { x, y, lod: reply[12] ?? 0 };
   }
 
-  private async readSupportedPollingRates(featureIndex: number): Promise<number[]> {
-    if (!featureIndex) return [];
-    const reply = await this.request(featureIndex, 0x10);
+  /**
+   * 0x8061 connection argument. 0 is the USB cable, 1 is Lightspeed. Omitting
+   * it reads the cable's list, which on a Superlight 2 stops at 1000 Hz.
+   */
+  private reportRateConnection(): number {
+    return this.wiredConnection ? 0x00 : 0x01;
+  }
+
+  /** Bit N of the big-endian mask is rate code N: 125 Hz through 8000 Hz. */
+  private decodeExtendedReportRateMask(reply: Uint8Array): number[] {
     const flags = ((reply[3] ?? 0) << 8) | (reply[4] ?? 0);
     return REPORT_RATE_HZ.filter((_rate, index) => (flags & (1 << index)) !== 0);
+  }
+
+  private async readSupportedPollingRates(featureIndex: number): Promise<number[]> {
+    if (!featureIndex) return [];
+    const connection = this.reportRateConnection();
+    // Function 0x10 is the list for the connection in the first parameter.
+    // A zero there is the wired list (issue #224).
+    const listed = this.decodeExtendedReportRateMask(await this.request(featureIndex, 0x10, connection));
+    if (connection === 0x00 || listed.some((rate) => rate > 1000)) return listed;
+    // Some firmware keeps the capability bitmask on function 0 and answers
+    // function 0x10 with the wired ceiling even when asked for Lightspeed.
+    // An unsupported function comes back as an error, not a timeout.
+    try {
+      const capabilities = this.decodeExtendedReportRateMask(await this.request(featureIndex, 0x00, connection));
+      if (capabilities.some((rate) => rate > 1000)) return capabilities;
+    } catch {
+      // Function 0 is absent on the versions that answer function 0x10.
+    }
+    return listed;
   }
 
   private async readPollingRate(featureIndex: number): Promise<number> {
@@ -3341,7 +3369,7 @@ export class LogitechHidppClient {
       throw new Error("This Logitech mouse does not expose extended report-rate controls.");
     }
 
-    const reply = await this.request(featureIndex, 0x20);
+    const reply = await this.request(featureIndex, 0x20, this.reportRateConnection());
     const rate = REPORT_RATE_HZ[reply[3] ?? -1];
     if (!rate) {
       throw new Error("The mouse returned an unknown report-rate value.");
