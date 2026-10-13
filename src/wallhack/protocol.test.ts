@@ -13,6 +13,7 @@ import {
   wallhackBuildSetKeys,
   wallhackBuildSetMacro,
   wallhackBuildSimple,
+  wallhackBuildBatteryRead,
   wallhackBuildWrite,
   wallhackCurveStatusText,
   wallhackDecodeBattery,
@@ -42,6 +43,9 @@ import {
   wallhackValidateCurve,
   WALLHACK_COMMAND,
   WALLHACK_CURVE_ADDRESS,
+  WALLHACK_DEBOUNCE_ADDRESS,
+  WALLHACK_DEBOUNCE_MAX_MS,
+  WALLHACK_DEBOUNCE_MIN_MS,
   WALLHACK_FLASH,
   WALLHACK_REPORT_LENGTH,
 } from "./index.ts";
@@ -103,6 +107,14 @@ test("single-byte config read returns byte 7", () => {
 test("DPI read decodes bytes 9-10 little-endian", () => {
   const response = new Uint8Array([0, 0, 0xa4, 9, WALLHACK_FLASH.dpi8Block, 0, 0, 1, 0, 0x40, 0x06]);
   assert.equal(wallhackReadDpi(response), 1600);
+});
+
+test("battery read frames [0,0,0xba] and decode treats >100 as unknown", () => {
+  const packet = wallhackBuildBatteryRead();
+  assert.deepEqual([...packet.subarray(0, 3)], [0, 0, 0xba]);
+  assert.equal(WALLHACK_DEBOUNCE_ADDRESS, 109);
+  assert.equal(WALLHACK_DEBOUNCE_MIN_MS, 0);
+  assert.equal(WALLHACK_DEBOUNCE_MAX_MS, 20);
 });
 
 test("version reply decodes three big-endian firmwares", () => {

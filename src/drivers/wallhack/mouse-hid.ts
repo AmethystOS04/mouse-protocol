@@ -6,6 +6,8 @@ import {
   wallhackBuildGetMacro,
   wallhackBuildRead,
   wallhackBuildSetDpiStage,
+  wallhackBuildBatteryRead,
+  wallhackBuildPollRateWrite,
   wallhackBuildSetKeys,
   wallhackBuildSetMacro,
   wallhackBuildSimple,
@@ -41,7 +43,11 @@ import {
   WALLHACK_BUTTON_ORDER,
   WALLHACK_COMMAND,
   WALLHACK_CURVE_ADDRESS,
+  WALLHACK_DPI_MAX,
+  WALLHACK_DPI_MIN,
   WALLHACK_CURVE_MODE_INDEX,
+  WALLHACK_DEBOUNCE_MAX_MS,
+  WALLHACK_DEBOUNCE_MIN_MS,
   WALLHACK_FLASH,
   WALLHACK_KEY_SLOTS,
   WALLHACK_MACRO_SLOTS,
@@ -168,7 +174,8 @@ export class WallhackMouseHidClient {
     const dpiStageReply = await this.readByte(WALLHACK_FLASH.dpiRank);
     const activeDpiStage = dpiStageReply ?? 0;
     const dpi = await this.readDpi();
-    const pollRank = await this.readByte(WALLHACK_FLASH.reportUsb);
+    // Poll byte lives at reportUser (104); reportEsb/dpiRank are 0-7 receiver ranks.
+    const pollRank = await this.readByte(WALLHACK_FLASH.reportUser);
     const wirelessRank = await this.readByte(WALLHACK_FLASH.reportEsb);
     const lodCode = await this.readByte(WALLHACK_FLASH.silentHeight);
     const motionSync = await this.readByte(WALLHACK_FLASH.motionSyncEnable);
@@ -230,8 +237,8 @@ export class WallhackMouseHidClient {
   // ---------------------------------------------------------------------------
 
   async setDpi(dpi: number): Promise<number> {
-    if (!Number.isInteger(dpi) || dpi < 50 || dpi > 26000) {
-      throw new Error("WALLHACK DPI must be between 50 and 26000.");
+    if (!Number.isInteger(dpi) || dpi < WALLHACK_DPI_MIN || dpi > WALLHACK_DPI_MAX) {
+      throw new Error(`WALLHACK DPI must be between ${WALLHACK_DPI_MIN} and ${WALLHACK_DPI_MAX}.`);
     }
     await this.send(wallhackBuildSetDpiStage(dpi));
     const confirmed = await this.readDpi();
@@ -242,11 +249,9 @@ export class WallhackMouseHidClient {
   async setPollingRate(hz: number): Promise<number> {
     const rank = wallhackPollingHzToRank(hz);
     if (rank === null) throw new Error(`${hz} Hz is not a supported WALLHACK polling rate.`);
-    // Wired and wireless polling live in separate bytes; write both so the rate
-    // holds across a dongle/cable switch.
-    await this.writeByte(WALLHACK_FLASH.reportUsb, rank);
-    await this.writeByte(WALLHACK_FLASH.reportEsb, rank);
-    const confirmed = await this.readByte(WALLHACK_FLASH.reportUsb);
+    // Single rate byte at reportUser (104), per vendor `pO`. Verified by re-read.
+    await this.send(wallhackBuildPollRateWrite(hz));
+    const confirmed = await this.readByte(WALLHACK_FLASH.reportUser);
     if (confirmed !== rank) throw new Error(`The mouse did not confirm ${hz} Hz.`);
     return hz;
   }
@@ -273,8 +278,10 @@ export class WallhackMouseHidClient {
   }
 
   async setDebounceTime(debounceMs: number): Promise<number> {
-    if (!Number.isInteger(debounceMs) || debounceMs < 0 || debounceMs > 20) {
-      throw new Error("WALLHACK debounce time must be between 0 and 20 ms.");
+    // EXPERIMENTAL: vendor Terminal has no debounce path (`keyDebounceTime`
+    // absent from `Ar`/`O()`/auto-read); raw byte at 109, scale unverified.
+    if (!Number.isInteger(debounceMs) || debounceMs < WALLHACK_DEBOUNCE_MIN_MS || debounceMs > WALLHACK_DEBOUNCE_MAX_MS) {
+      throw new Error(`WALLHACK debounce time must be between ${WALLHACK_DEBOUNCE_MIN_MS} and ${WALLHACK_DEBOUNCE_MAX_MS} ms.`);
     }
     return await this.writeVerifiedByte(WALLHACK_FLASH.keyDebounceTime, debounceMs, "debounce time", (value) => value === debounceMs).then(() => debounceMs);
   }
@@ -296,6 +303,16 @@ export class WallhackMouseHidClient {
       }
     }
     return minutes;
+  }
+
+  /**
+   * Battery via `BATTERY` (0xBA). UNVERIFIED: the vendor mouse port never
+   * sends this command, so the reply layout (percent at byte 7, charging
+   * at byte 8) is best-effort. Returns nulls when the mouse stays silent.
+   */
+  async readBattery(): Promise<{ percent: number | null; charging: boolean } | null> {
+    const reply = await this.exchange(wallhackBuildBatteryRead(), WALLHACK_COMMAND.battery).catch(() => null);
+    return reply ? wallhackDecodeBattery(reply) : null;
   }
 
   /**

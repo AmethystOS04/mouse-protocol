@@ -17,8 +17,9 @@ export const WALLHACK_VENDOR_ID = 0x3879; // 14457
 /** A second vendor id some K-001 units enumerate under (the switch-matrix MCU). */
 export const WALLHACK_KEYBOARD_ALT_VENDOR_ID = 0x1caa; // 7338
 
-/** M-001 mouse: real config PID and the in-app demo PID. */
-export const WALLHACK_MOUSE_PRODUCT_IDS = new Set<number>([0x1110, 0x0807]);
+/** M-001 mouse config PID. Terminal `X6` filter is 14457:4368 only;
+ * 2055 (0x0807) PIDs in the bundle are keyboard-side (7330/7338:2055). */
+export const WALLHACK_MOUSE_PRODUCT_IDS = new Set<number>([0x1110]);
 /** K-001 keyboard PID (shared across both keyboard vendor ids). */
 export const WALLHACK_KEYBOARD_PRODUCT_IDS = new Set<number>([0x0806]);
 
@@ -89,12 +90,22 @@ export const WALLHACK_FLASH = {
   dynamicDpiCoordinateReportEnable: 119,
 } as const;
 
-/** Polling-rate rank → Hz (`Z1`). Same table for wired and wireless. */
+/** Polling-rate rank → Hz (`Ap`). The rate byte lives at `reportUser` (104)
+ * (`mO`/`pO`/`yO`); `reportEsb` (10) and `dpiRank` (12) hold 0-7 receiver
+ * rank indicators (`sO`/`dO`, `oO`/`fO`, default rank `Cv=7`). Same table wired/wireless. */
 export const WALLHACK_POLLING_BY_RANK: Record<number, number> = {
   0: 125, 1: 250, 2: 500, 3: 1000, 4: 1500, 5: 2000, 6: 2500, 7: 3000,
   8: 3500, 9: 4000, 10: 4500, 11: 5000, 12: 5500, 13: 6000, 14: 6500,
   15: 7000, 16: 7500, 17: 8000,
 };
+
+/** Vendor DPI limits (`rh=100`, `ih=30000`); any integer in range is accepted. */
+export const WALLHACK_DPI_MIN = 100;
+export const WALLHACK_DPI_MAX = 30000;
+
+/** Combined `reportUser` block: `JO()` reads 16 bytes from 104-119 (`C7`). */
+export const WALLHACK_REPORT_USER_BASE = 104;
+export const WALLHACK_REPORT_USER_LENGTH = 16;
 
 /** Full list of selectable polling rates, in Hz (`jm`). */
 export const WALLHACK_POLLING_RATES: readonly number[] = Object.values(WALLHACK_POLLING_BY_RANK);
@@ -111,6 +122,28 @@ export function wallhackPollingHzToRank(hz: number): number | null {
     if (value === hz) return Number(rank);
   }
   return null;
+}
+
+/** Nearest rank for an arbitrary Hz (`hO`); exact hits win, else closest. */
+export function wallhackPollingHzToNearestRank(hz: number): number {
+  let best = 0;
+  let bestDelta = Infinity;
+  for (const [rank, value] of Object.entries(WALLHACK_POLLING_BY_RANK)) {
+    if (value === hz) return Number(rank);
+    const delta = Math.abs(hz - value);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = Number(rank);
+    }
+  }
+  return best;
+}
+
+/** Poll-rate write packet at `reportUser` (`pO`): single rank byte. Throws when unsupported. */
+export function wallhackBuildPollRateWrite(hz: number): Uint8Array {
+  const rank = wallhackPollingHzToRank(hz);
+  if (rank === null) throw new Error(`Unsupported poll rate: ${hz} Hz. Supported values: ${WALLHACK_POLLING_RATES.join(", ")}`);
+  return wallhackBuildWrite(WALLHACK_FLASH.reportUser, [rank]);
 }
 
 /**
@@ -182,6 +215,7 @@ export const WALLHACK_MIN_FIRMWARE = {
   sensorScanning: { mouse: 52, dongle: 36, nxp5516: 48 },
   buttonMapping: { mouse: 53, dongle: 37, nxp5516: 52 },
   sensorRotation: { mouse: 53, dongle: 37, nxp5516: 52 },
+  keyboardBindings: { mouse: 57, dongle: 40, nxp5516: 53 },
   macros: { mouse: 57, dongle: 40, nxp5516: 53 },
   dynamicSensitivity: { mouse: 57, dongle: 40, nxp5516: 53 },
 } as const;
@@ -313,9 +347,34 @@ export interface WallhackBattery {
 }
 
 /**
- * Decode a BATTERY reply: percentage at byte 7, charging flag at byte 8. The
- * exact byte positions are best-effort from the obfuscated bundle and want
- * hardware confirmation; a percent outside 0-100 is treated as unknown.
+ * `BATTERY` (0xBA) read packet. The command code exists in the vendor
+ * `bt` table, but the Terminal mouse port never sends it: the connect-time
+ * auto-read is version / report_esb rank / dpi_rank rank / dpi8Block /
+ * combined / chipIds only, and the input handler `O()` has no `BATTERY`
+ * branch (same for LIGHTING/PAIR/FACTORY_RESET/TEST_COLOR).
+ */
+export function wallhackBuildBatteryRead(): Uint8Array {
+  return wallhackBuildSimple(WALLHACK_COMMAND.battery);
+}
+
+/**
+ * Debounce (`keyDebounceTime`, address 109) is address-known from the `He`
+ * map but has no vendor read/write/parse path: it is absent from the `Ar`
+ * table, the `O()` handler, and the auto-read list, and no Terminal UI
+ * string references it. Raw single-byte reads/writes at 109 reach the
+ * device, but the unit/scale/range are unverified — treat as experimental
+ * until confirmed on hardware.
+ */
+export const WALLHACK_DEBOUNCE_ADDRESS = 109;
+/** Best-effort debounce window (ms) until hardware confirms the scale. */
+export const WALLHACK_DEBOUNCE_MIN_MS = 0;
+export const WALLHACK_DEBOUNCE_MAX_MS = 20;
+
+/**
+ * Decode a BATTERY reply: percentage at byte 7, charging flag at byte 8.
+ * UNVERIFIED — see `wallhackBuildBatteryRead`: the vendor app never issues
+ * this command on the mouse port, so the byte positions are best-effort and
+ * want hardware confirmation; a percent outside 0-100 is treated as unknown.
  */
 export function wallhackDecodeBattery(response: Uint8Array): WallhackBattery | null {
   if (response.length < 9) return null;

@@ -207,7 +207,7 @@ test("mouse isSupported matches VID/PID on the 0xFF1C command page", () => {
 
 test("mouse readStatus decodes config, polling, LOD and firmware", async () => {
   const { device } = fakeMouse({
-    [WALLHACK_FLASH.reportUsb]: 3, // 1000 Hz
+    [WALLHACK_FLASH.reportUser]: 3, // 1000 Hz
     [WALLHACK_FLASH.silentHeight]: 1, // Medium
     [WALLHACK_FLASH.motionSyncEnable]: 1,
     [WALLHACK_FLASH.dpi8Block]: 1600,
