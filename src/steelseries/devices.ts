@@ -67,6 +67,7 @@ export const STEELSERIES_VENDOR_ID = 0x1038;
 
 export type SteelSeriesProtocolFamily =
   | "rival3"
+  | "rival-110"
   | "rival310"
   | "aerox3"
   | "aerox3-wireless"
@@ -100,6 +101,36 @@ export interface SteelSeriesProduct {
 }
 
 export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new Map([
+  // rival-110.lisp / rival-106.lisp / rival-300s.lisp (vendor GG
+  // specification): all three `include "rival-100"`, so they share its
+  // command bytes, but they use the PixArt PMW3326 sensor (200-7200 DPI),
+  // not the Rival 100's eight-step table — hence a separate family/module
+  // (./rival-110.ts). rivalcfg groups these ids under rival110.py, with
+  // rival300s.py reusing it.
+  [0x1729, {
+    model: "Rival 110",
+    family: "rival-110",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1816, {
+    model: "Rival 106",
+    family: "rival-110",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1810, {
+    model: "Rival 300S",
+    family: "rival-110",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   // Pre-0.37 firmware enumeration.
   [0x1824, {
     model: "Rival 3",
