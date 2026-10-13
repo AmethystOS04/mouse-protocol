@@ -77,7 +77,8 @@ export type SteelSeriesProtocolFamily =
   | "aerox9-wireless"
   | "prime-plus"
   | "prime-mini-wireless"
-  | "sensei-ten";
+  | "sensei-ten"
+  | "sensei-raw";
 
 export interface SteelSeriesProduct {
   model: string;
@@ -100,6 +101,60 @@ export interface SteelSeriesProduct {
 }
 
 export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new Map([
+  // sensei-raw_base.lisp (vendor GG specification): the original Sensei [RAW]
+  // command set — linear two-preset DPI 0x03 (90-5670), polling 0x04, single
+  // LED brightness/effect 0x05/0x07, eight 3-byte button slots 0x31, save
+  // 0x09, firmware 0x10. Shared by the base and its editions — see
+  // ./sensei-raw.ts. Distinct from the Sensei [RAW] Optical RGB (0x1800),
+  // which uses the Rival 310 command set.
+  [0x1369, {
+    model: "Sensei [RAW]",
+    family: "sensei-raw",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1362, {
+    model: "Sensei [RAW] Diablo III Edition",
+    family: "sensei-raw",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x136d, {
+    model: "Sensei [RAW] Guild Wars 2 Edition",
+    family: "sensei-raw",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x136f, {
+    model: "Sensei [RAW] Call of Duty: Black Ops II Edition",
+    family: "sensei-raw",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1380, {
+    model: "Sensei [RAW] World of Tanks Edition",
+    family: "sensei-raw",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1390, {
+    model: "Sensei [RAW] Heroes of the Storm Edition",
+    family: "sensei-raw",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   // Pre-0.37 firmware enumeration.
   [0x1824, {
     model: "Rival 3",
