@@ -8,6 +8,7 @@ import {
 } from "../asus/index.ts";
 import { ATK_COMPX_PRODUCT_IDS } from "./atk/products.ts";
 import { MICROSOFT_PRODUCT_CLASSIC, MICROSOFT_PRODUCT_PRO, MICROSOFT_VENDOR_ID, MICROSOFT_CLASSIC_USAGE_PAGE, MICROSOFT_CLASSIC_USAGE, MICROSOFT_PRO_USAGE_PAGE, MICROSOFT_PRO_USAGE } from "../microsoft/index.ts";
+import { FINALMOUSE_SLX_DONGLE_PRODUCT_IDS } from "../finalmouse/index.ts";
 import { INCOTT_PRODUCT_IDS, INCOTT_USAGE_PAGE, INCOTT_VENDOR_ID } from "../incott/index.ts";
 import { GLORIOUS_CORE2_PRODUCTS, GLORIOUS_CORE2_USAGE_PAGE, GLORIOUS_CORE2_VENDOR_ID } from "../glorious-core2/index.ts";
 import { EGG_WE_HID_FILTERS } from "./endgame/egg-we-control.ts";
@@ -883,6 +884,13 @@ export const SUPPORTED_HID_FILTERS: HIDDeviceFilter[] = [
   ...CORSAIR_HID_FILTERS,
   ...CORSAIR_BRAGI_HID_FILTERS,
   { vendorId: VENDOR_ID.finalmouse, productId: 0x0100, usagePage: 0xff00, usage: 0x0001 },
+  // Starlight X dongles share 0xff00 but the exact usage is not pinned down, so
+  // the picker matches on the page alone (the driver accepts either).
+  ...FINALMOUSE_SLX_DONGLE_PRODUCT_IDS.map((productId) => ({
+    vendorId: VENDOR_ID.finalmouse,
+    productId,
+    usagePage: 0xff00,
+  })),
   { vendorId: VENDOR_ID.pulsar },
   ...PULSAR_XS1_HID_FILTERS,
   // The Pulsar 4K Wireless Receiver enumerates under the shared Teevolution/VGN

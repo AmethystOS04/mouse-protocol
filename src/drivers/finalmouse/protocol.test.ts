@@ -271,3 +271,37 @@ test("Finalmouse SLX setters frame TMR, profiles and PAW LOD on report 0x01", as
   assert.deepEqual(writes[2]!.bytes.slice(0, 4), [3, 0xb9, 1, 2]);
   assert.deepEqual(writes[3]!.bytes.slice(0, 4), [3, 0x99, 1, 12]);
 });
+
+test("Finalmouse Starlight X exposes a fixed PerfectPolling rate, not a picker", async () => {
+  // SLX answers the poll-rate read (so readStatus still needs it) but has no
+  // adjustable rate, so it advertises none and refuses a write; the app then
+  // hides the selector via `pollingReadOnly` / `hideMotionSync`.
+  let listener: ((event: HIDInputReportEvent) => void) | null = null;
+  const device = {
+    vendorId: 0x361d,
+    productId: 0x0300,
+    productName: "Finalmouse SLX",
+    collections: [{ usagePage: 0xff00, usage: 1 }],
+    opened: true,
+    async open() {},
+    async close() {},
+    addEventListener(_type: string, handler: (event: HIDInputReportEvent) => void) { listener = handler; },
+    removeEventListener() {},
+    async sendReport() {},
+  } as unknown as HIDDevice;
+  const client = new FinalmouseHidClient(device);
+  // Attach the input listener before emitting, mirroring a real burst that
+  // arrives after the driver opens the interface.
+  await client.open();
+  const emit = (command: number, payload: number[]): void => {
+    listener?.({ reportId: FINALMOUSE_REPORT.slxInput, data: input(command, payload) } as HIDInputReportEvent);
+  };
+  emit(3, [0x40, 0x06]); // DPI 1600
+  emit(4, [0x40, 0x1f]); // the fixed rate the SLX reports
+
+  const status = await client.readStatus();
+  assert.deepEqual(status.supportedPollingRates, []);
+  assert.equal(status.ui?.pollingReadOnly, true);
+  assert.equal(status.ui?.hideMotionSync, true);
+  await assert.rejects(client.setPollingRate(8000), /polling rate/);
+});

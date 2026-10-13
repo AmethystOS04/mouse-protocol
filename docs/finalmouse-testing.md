@@ -31,6 +31,12 @@ was available, so every SLX path below is **unverified on hardware**:
   capture/live-stream cmds 27-30 are intentionally not wired to any UI.
 - PerfectPolling: display-only in xpanel (fixed 250 µs end-to-end claim);
   there is no writable command, so OpenMouse shows an info card.
+- Polling rate: the Starlight X has none to set — PerfectPolling runs a fixed
+  pipeline. The driver still surfaces the rate it reports for telemetry, but
+  advertises no selectable rates (`supportedPollingRates: []`), refuses
+  `setPollingRate`, and sets `pollingReadOnly` so the app hides the selector
+  (`hideMotionSync` likewise, since Motion Sync is not user-facing there).
+  Ultralight X keeps the full 500-8000 Hz ladder and its Motion Sync toggle.
 - LOD custom: PAW cmd 25. Presets send raw 2 (= 1 mm) / raw 3 (= 2 mm);
   the custom slider sends raw 7-17 (= 0.7-1.7 mm). Surfaced through the
   shared `liftOffScale` slider plus the `setLiftOffScale` driver hook.
