@@ -10,6 +10,7 @@ import {
   RIVAL300_POLLING_RATES,
   Rival300ProtocolError,
   steelseriesRival300ActiveCpiQuery,
+  steelseriesRival300DecodeActivePreset,
   steelseriesRival300DecodeFirmware,
   steelseriesRival300DpiOptions,
   steelseriesRival300EncodeButtonsMapping,
@@ -55,6 +56,11 @@ test("polling, save, firmware, and active-CPI queries", () => {
     display: "1.3",
   });
   assert.throws(() => steelseriesRival300DecodeFirmware(new Uint8Array([0x03])), Rival300ProtocolError);
+  // Active-preset reply: report-id stripped, so the first byte is the level.
+  assert.equal(steelseriesRival300DecodeActivePreset(new Uint8Array([0x01, 0x00])), 1);
+  assert.equal(steelseriesRival300DecodeActivePreset(new Uint8Array([0x02, 0x00])), 2);
+  assert.throws(() => steelseriesRival300DecodeActivePreset(new Uint8Array([0x03])), Rival300ProtocolError);
+  assert.throws(() => steelseriesRival300DecodeActivePreset(new Uint8Array([])), Rival300ProtocolError);
 });
 
 test("LED color and effect address logo (0x01) and wheel (0x02) zones", () => {

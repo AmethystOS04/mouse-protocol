@@ -142,6 +142,23 @@ export function steelseriesRival300ActiveCpiQuery(): Uint8Array {
   return new Uint8Array(RIVAL300_COMMAND.activeCpiIndex);
 }
 
+/**
+ * Decode the active-preset reply. The specification's `resolution_level`
+ * incoming struct is `report_id` then `level`, and the reply's report id is
+ * not surfaced by WebHID, so the level is the first byte. The device reports
+ * it 1-based (values 0x01/0x02); anything else is rejected rather than
+ * guessed at.
+ */
+export function steelseriesRival300DecodeActivePreset(payload: Uint8Array): 1 | 2 {
+  const level = payload[0];
+  if (level !== 0x01 && level !== 0x02) {
+    throw new Rival300ProtocolError(
+      `SteelSeries Rival 300 active preset reply was not 1 or 2 (got ${level === undefined ? "nothing" : `0x${level.toString(16)}`}).`,
+    );
+  }
+  return level;
+}
+
 export interface SteelSeriesRival300Firmware {
   /** The two raw response bytes, in the order the device sent them (minor, major). */
   bytes: [number, number];

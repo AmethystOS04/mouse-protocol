@@ -3,9 +3,14 @@ import test from "node:test";
 
 import { SteelSeriesRival300HidClient } from "./rival-300-hid.ts";
 
-function fakeDevice(options: { productId?: number; firmware?: number[]; answerFirmware?: boolean } = {}) {
+function fakeDevice(options: { productId?: number; firmware?: number[]; activePreset?: number; answer?: boolean } = {}) {
   const sent: Array<{ reportId: number; payload: number[] }> = [];
   let listener: ((event: HIDInputReportEvent) => void) | null = null;
+  const reply = (bytes: number[]) => {
+    const response = new Uint8Array(bytes);
+    queueMicrotask(() =>
+      listener?.({ reportId: 0, data: new DataView(response.buffer), device } as unknown as HIDInputReportEvent));
+  };
   const device = {
     vendorId: 0x1038,
     productId: options.productId ?? 0x1710,
@@ -20,11 +25,9 @@ function fakeDevice(options: { productId?: number; firmware?: number[]; answerFi
         : new Uint8Array(data as ArrayBuffer);
       const payload = [...view];
       sent.push({ reportId, payload });
-      if (payload[0] === 0x10 && payload[1] === 0x00 && options.answerFirmware !== false) {
-        const response = new Uint8Array(options.firmware ?? [0x03, 0x01]);
-        queueMicrotask(() =>
-          listener?.({ reportId: 0, data: new DataView(response.buffer), device } as unknown as HIDInputReportEvent));
-      }
+      if (options.answer === false) return;
+      if (payload[0] === 0x10 && payload[1] === 0x00) reply(options.firmware ?? [0x03, 0x01]);
+      if (payload[0] === 0x16 && payload[1] === 0x00) reply([options.activePreset ?? 0x01]);
     },
     sendFeatureReport: async () => { throw new Error("the Rival 300 protocol does not use feature reports"); },
     receiveFeatureReport: async () => { throw new Error("the Rival 300 protocol does not use feature reports"); },
@@ -53,37 +56,65 @@ test("claims the Rival 300 family product ids and nothing else", () => {
   assert.equal(SteelSeriesRival300HidClient.isSupported({ ...device, vendorId: 0x1532 } as HIDDevice), false);
 });
 
-test("readStatus probes firmware and never claims to have read DPI/polling", async () => {
-  const { device, sent } = fakeDevice();
+test("readStatus probes firmware and the active preset, reporting that preset's default", async () => {
+  const { device, sent } = fakeDevice({ activePreset: 0x02 });
   const status = await new SteelSeriesRival300HidClient(device).readStatus();
-  assert.deepEqual(sent, [{ reportId: 0, payload: [0x10, 0x00] }]);
+  assert.deepEqual(sent, [
+    { reportId: 0, payload: [0x10, 0x00] },
+    { reportId: 0, payload: [0x16, 0x00] },
+  ]);
   assert.equal(status.brand, "SteelSeries");
   assert.equal(status.name, "SteelSeries Rival 300");
   assert.deepEqual(status.firmware, ["1.3"]);
   assert.equal(status.connectionType, "Wired");
-  assert.equal(status.dpi, 800);
+  // Active preset is 2, which this session has not written, so its default is shown.
+  assert.equal(status.dpi, 1600);
   assert.equal(status.pollingRateHz, 1000);
   assert.equal(status.ui?.valuesVerified, false);
-  assert.ok(status.ui?.pollingNote);
+  assert.ok(status.ui?.pollingNote?.includes("active preset (2)"));
 });
 
 test("a silent interface fails the firmware probe loudly", async () => {
-  const { device } = fakeDevice({ answerFirmware: false });
+  const { device } = fakeDevice({ answer: false });
   const client = new SteelSeriesRival300HidClient(device);
   await assert.rejects(() => client.readStatus(), /did not answer the firmware query/);
 });
 
-test("setDpi writes preset 1 plus save; setDpiPreset2 writes preset 2", async () => {
-  const { device, sent } = fakeDevice();
+test("setDpi writes the active preset (1 by default) plus save", async () => {
+  const { device, sent } = fakeDevice({ activePreset: 0x01 });
   const client = new SteelSeriesRival300HidClient(device);
   await client.readStatus();
   sent.length = 0;
   const dpi = await client.setDpi(800);
   assert.equal(dpi, 800);
   assert.deepEqual(sent, [
+    { reportId: 0, payload: [0x16, 0x00] },
     { reportId: 0, payload: [0x03, 0x01, 0x10] },
     { reportId: 0, payload: [0x09, 0x00] },
   ]);
+});
+
+test("setDpi writes preset 2 when the CPI button has selected it", async () => {
+  const { device, sent } = fakeDevice({ activePreset: 0x02 });
+  const client = new SteelSeriesRival300HidClient(device);
+  await client.readStatus();
+  sent.length = 0;
+  await client.setDpi(1600);
+  assert.deepEqual(sent, [
+    { reportId: 0, payload: [0x16, 0x00] },
+    { reportId: 0, payload: [0x03, 0x02, 0x20] },
+    { reportId: 0, payload: [0x09, 0x00] },
+  ]);
+  // readStatus now reports the value written to the active preset.
+  sent.length = 0;
+  const status = await client.readStatus();
+  assert.equal(status.dpi, 1600);
+});
+
+test("setDpiPreset2 writes and records preset 2", async () => {
+  const { device, sent } = fakeDevice({ activePreset: 0x01 });
+  const client = new SteelSeriesRival300HidClient(device);
+  await client.readStatus();
   sent.length = 0;
   await client.setDpiPreset2(1600);
   assert.deepEqual(sent, [
