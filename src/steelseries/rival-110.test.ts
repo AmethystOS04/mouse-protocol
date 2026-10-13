@@ -13,6 +13,7 @@ import {
   RIVAL110_POLLING_RATES,
   Rival110ProtocolError,
   steelseriesRival110ActiveCpiQuery,
+  steelseriesRival110DecodeActivePreset,
   steelseriesRival110DecodeFirmware,
   steelseriesRival110DpiOptions,
   steelseriesRival110EncodeButton6Mode,
@@ -68,6 +69,11 @@ test("save, firmware, and active-CPI queries", () => {
     display: "2.5",
   });
   assert.throws(() => steelseriesRival110DecodeFirmware(new Uint8Array([0x05])), Rival110ProtocolError);
+  // Active-preset reply: report-id stripped, so the first byte is the level.
+  assert.equal(steelseriesRival110DecodeActivePreset(new Uint8Array([0x01, 0x00])), 1);
+  assert.equal(steelseriesRival110DecodeActivePreset(new Uint8Array([0x02, 0x00])), 2);
+  assert.throws(() => steelseriesRival110DecodeActivePreset(new Uint8Array([0x03])), Rival110ProtocolError);
+  assert.throws(() => steelseriesRival110DecodeActivePreset(new Uint8Array([])), Rival110ProtocolError);
 });
 
 test("LED color, effect, and button-6 mode", () => {
