@@ -124,10 +124,10 @@ export interface RazerProduct {
    */
   highRatePolling: boolean;
   /**
-   * Some early HyperPolling devices commit an extended polling change with a
-   * second write: selector `0x01` on a different transaction id. OpenRazer
-   * does this for the standalone HyperPolling dongle after the ordinary
-   * selector-`0x00` write. Omitted for devices that need only one write.
+   * Commit an extended polling change with a second write, selector `0x01`,
+   * on this transaction id. OpenRazer sends the ordinary selector-`0x00`
+   * write first. The HyperPolling dongle puts the commit on `0xff`; the wired
+   * DeathAdder V3 keeps both writes on `0x1f`. Omitted when one write is enough.
    */
   extendedPollingCommitTransactionId?: number;
   /**
@@ -497,12 +497,18 @@ const PRODUCT_DEFINITIONS: ReadonlyArray<[number, Omit<RazerProduct, "transactio
   // already sitting at 2000 Hz while this row still offered a 1000 Hz ceiling.
   // Wired, like the Viper 8KHz above, but HyperPolling is the point of the
   // model and the legacy command cannot encode it.
+  //
+  // The extended write alone does not stick. Issue #222: an 8000 → 2000
+  // write was acknowledged and the read-back stayed at 8000. OpenRazer
+  // (`razer_attr_write_poll_rate`) follows selector `0x00` with selector
+  // `0x01`, both on transaction `0x1f` — not the dongle's `0xff` commit.
   [0x00b2, {
     model: "DeathAdder V3",
     ...STANDARD,
     maxDpi: DPI_FOCUS_PRO,
     pollingRates: RATES_8K,
     highRatePolling: true,
+    extendedPollingCommitTransactionId: RAZER_TRANSACTION_ID_1F,
   }],
   // Standalone HyperPolling Wireless Dongle. OpenRazer reads extended polling
   // with transaction 0x1f and commits a change with two writes: selector 0x00
