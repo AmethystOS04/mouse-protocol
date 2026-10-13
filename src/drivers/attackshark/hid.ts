@@ -119,7 +119,7 @@ const X11_RECEIVER_MODELS: ReadonlyMap<number, ReceiverModel> = new Map([
   [0x4d, attackShark("X3")],
   [0x4e, attackShark("X3 Max")],
   [0x01, attackShark("X3 Pro")],
-  [0x07, attackShark("X11 SE")],
+  [0x07, attackShark("X11 SE", "percent")],
   [0xbe, attackShark("X11 Pro")],
   [0xb1, attackShark("X1")],
   [0x02, attackShark("X8 SE")],

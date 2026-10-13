@@ -218,6 +218,8 @@ test("Attack Shark battery reports validate their signature and percentage", () 
   // The R1 (0x10) reports charge on a 1-10 scale.
   assert.equal(AttackSharkHidClient.parseBatteryReport(new Uint8Array([0x03, 0x10, 0x40, 0x01, 7])), 70);
   assert.equal(AttackSharkHidClient.parseBatteryReport(new Uint8Array([0x03, 0x10, 0x40, 0x01, 11])), null);
+  // The X11 SE (0x07) reports battery percentage directly (0-100%).
+  assert.equal(AttackSharkHidClient.parseBatteryReport(new Uint8Array([0x03, 0x07, 0x40, 0x01, 85])), 85);
   // The X3 (0x4d) is named by its id, but its scale is unchecked: no battery.
   assert.equal(AttackSharkHidClient.parseBatteryReport(new Uint8Array([0x03, 0x4d, 0x40, 0x01, 0x64])), null);
 });
