@@ -869,6 +869,23 @@ test("Mouse Dock Pro with a HyperPolling mouse unlocks the 8 kHz ladder", async 
   assert.deepEqual(status.supportedPollingRates, [...RATES_8K]);
 });
 
+test("the wired DeathAdder V3 commits polling with selector 0x01 on the same transaction id", async () => {
+  // Issue #222: selector 0x00 alone is acknowledged and the read-back stays
+  // at the old rate. OpenRazer follows it with selector 0x01, still on 0x1f.
+  const { client, sent } = fakeMouse(
+    { tracking: 0, liftOff: 2, landing: 1, asymmetric: false },
+    { productId: 0x00b2 },
+  );
+
+  const confirmed = await client.setPollingRate(2000);
+
+  assert.equal(confirmed, 2000);
+  const writes = sent.filter((packet) => packet[6] === 0x00 && packet[7] === 0x40);
+  assert.equal(writes.length, 2);
+  assert.deepEqual([writes[0][1], writes[0][8], writes[0][9]], [0x1f, 0x00, 0x04]);
+  assert.deepEqual([writes[1][1], writes[1][8], writes[1][9]], [0x1f, 0x01, 0x04]);
+});
+
 test("HyperPolling dongle commits an 8 kHz change through both selectors", async () => {
   const { client, sent } = fakeMouse(
     { tracking: 0, liftOff: 2, landing: 1, asymmetric: false },

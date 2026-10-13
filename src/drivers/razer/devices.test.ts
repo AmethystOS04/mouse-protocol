@@ -145,6 +145,9 @@ test("the wired DeathAdder V3 writes polling on the extended command", () => {
   const wired = RAZER_PRODUCTS.get(0x00b2);
   assert.equal(wired?.wireless, false);
   assert.equal(wired?.highRatePolling, true);
+  // Both writes stay on 0x1f. The dongle's commit uses 0xff; copying that
+  // here would address a transaction this mouse does not use for the commit.
+  assert.equal(wired?.extendedPollingCommitTransactionId, RAZER_TRANSACTION_ID);
   // The rate the hardware was found at has to survive the round trip, or the
   // picker offers a value the mouse is already sitting at and cannot be set to.
   assert.ok(wired?.pollingRates.includes(2000));
