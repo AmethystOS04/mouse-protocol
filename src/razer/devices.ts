@@ -127,7 +127,8 @@ export interface RazerProduct {
    * Commit an extended polling change with a second write, selector `0x01`,
    * on this transaction id. OpenRazer sends the ordinary selector-`0x00`
    * write first. The HyperPolling dongle puts the commit on `0xff`; the wired
-   * DeathAdder V3 keeps both writes on `0x1f`. Omitted when one write is enough.
+   * DeathAdder V3 and the wireless Viper V3 Pro keep both writes on `0x1f`.
+   * Omitted when one write is enough.
    */
   extendedPollingCommitTransactionId?: number;
   /**
@@ -430,7 +431,19 @@ const PRODUCT_DEFINITIONS: ReadonlyArray<[number, Omit<RazerProduct, "transactio
   [0x00a5, { model: "Viper V2 Pro", wireless: false, highRatePolling: false, ...VIPER_V2_PRO }],
   [0x00a6, { model: "Viper V2 Pro", wireless: true, highRatePolling: true, ...VIPER_V2_PRO }],
   [0x00c0, { model: "Viper V3 Pro", wireless: false, pollingRates: RATES_1K, highRatePolling: false, ...VIPER_V3_PRO }],
-  [0x00c1, { model: "Viper V3 Pro", wireless: true, pollingRates: RATES_8K, highRatePolling: true, ...VIPER_V3_PRO }],
+  // Issue #228: the live extended write applied but the rate reverted once the
+  // mouse powered off. OpenRazer follows selector `0x00` with `0x01` on the same
+  // `0x1f` transaction for `VIPER_V3_PRO_WIRELESS` — the store, not just the
+  // live register. The wired id is not in OpenRazer's commit list, so it keeps
+  // the single write.
+  [0x00c1, {
+    model: "Viper V3 Pro",
+    wireless: true,
+    pollingRates: RATES_8K,
+    highRatePolling: true,
+    ...VIPER_V3_PRO,
+    extendedPollingCommitTransactionId: RAZER_TRANSACTION_ID_1F,
+  }],
   [0x006e, { model: "DeathAdder Essential", ...DEATHADDER_ESSENTIAL }],
   [0x0071, { model: "DeathAdder Essential White Edition", ...DEATHADDER_ESSENTIAL }],
   [0x0098, { model: "DeathAdder Essential (2021)", ...DEATHADDER_ESSENTIAL }],
