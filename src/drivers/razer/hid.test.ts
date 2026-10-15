@@ -886,6 +886,23 @@ test("the wired DeathAdder V3 commits polling with selector 0x01 on the same tra
   assert.deepEqual([writes[1][1], writes[1][8], writes[1][9]], [0x1f, 0x01, 0x04]);
 });
 
+test("the wireless Viper V3 Pro commits polling with selector 0x01 on the same transaction id", async () => {
+  // Issue #228: selector 0x00 alone applies to the live register, so the rate
+  // worked until the mouse powered off. OpenRazer follows it with selector 0x01
+  // on 0x1f for the store, matching the wired DeathAdder V3's commit.
+  const { client, sent } = fakeMouse(
+    { tracking: 0, liftOff: 2, landing: 1, asymmetric: false },
+  );
+
+  const confirmed = await client.setPollingRate(2000);
+
+  assert.equal(confirmed, 2000);
+  const writes = sent.filter((packet) => packet[6] === 0x00 && packet[7] === 0x40);
+  assert.equal(writes.length, 2);
+  assert.deepEqual([writes[0][1], writes[0][8], writes[0][9]], [0x1f, 0x00, 0x04]);
+  assert.deepEqual([writes[1][1], writes[1][8], writes[1][9]], [0x1f, 0x01, 0x04]);
+});
+
 test("HyperPolling dongle commits an 8 kHz change through both selectors", async () => {
   const { client, sent } = fakeMouse(
     { tracking: 0, liftOff: 2, landing: 1, asymmetric: false },
