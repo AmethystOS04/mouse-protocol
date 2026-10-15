@@ -157,6 +157,12 @@ test("Finalmouse SLX-only setters reject Ultralight X hardware", async () => {
   await assert.rejects(client.setActiveProfile(0), /Starlight X/);
 });
 
+test("Finalmouse Starlight X reports decode DPI and polling rate as commands 16 and 17", () => {
+  // Captured from a Starlight X dongle (361d:0300, firmware 1.1.1) after a wake/all burst.
+  assert.deepEqual(decodeFinalmouseReport(FINALMOUSE_REPORT.slxInput, input(16, [0x40, 0x06])), { dpi: 1600 });
+  assert.deepEqual(decodeFinalmouseReport(FINALMOUSE_REPORT.slxInput, input(17, [0xe8, 0x03])), { pollingRateHz: 1000 });
+});
+
 test("Finalmouse Starlight X reports decode click mode, TMR, profiles and PAW LOD", () => {
   assert.deepEqual(
     decodeFinalmouseReport(FINALMOUSE_REPORT.slxInput, input(31, [1, 0, 2, 0])),
