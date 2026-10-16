@@ -1,5 +1,6 @@
 export * from "./rival3.js";
 export * from "./rival-100.js";
+export * from "./rival-110.js";
 export * from "./rival310.js";
 export * from "./aerox3.js";
 export * from "./aerox3-wireless.js";
