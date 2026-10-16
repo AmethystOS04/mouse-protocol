@@ -61,6 +61,15 @@
  * `prime_wireless_wired.py`/`prime_wireless_wireless.py`, but the plain
  * Prime Wireless's PIDs (`0x1842` wired / `0x1840` 2.4 GHz) are out of scope
  * for this cluster and deliberately not added here.
+ *
+ * The Sensei Pro / Rival Pro (`"sensei-rival-pro"`, base station `0x1880` /
+ * dongle `0x1882` — see `./sensei-rival-pro.ts`) is its own family per the
+ * same rule: a distinct command set (raw-uint16 XY DPI with per-preset
+ * lift-off/landing, dual report/polling rates up to 8000 Hz) reconstructed
+ * from the vendor's own SteelSeries GG device specification rather than
+ * from rivalcfg, which does not cover these mice. The four models share one
+ * specification and report the model themselves; only the station and dongle
+ * USB product ids are registered.
  */
 
 export const STEELSERIES_VENDOR_ID = 0x1038;
@@ -77,7 +86,8 @@ export type SteelSeriesProtocolFamily =
   | "aerox9-wireless"
   | "prime-plus"
   | "prime-mini-wireless"
-  | "sensei-ten";
+  | "sensei-ten"
+  | "sensei-rival-pro";
 
 export interface SteelSeriesProduct {
   model: string;
@@ -381,6 +391,26 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // Sensei Pro / Rival Pro share one vendor specification: the mouse reports
+  // its model and color itself (`read_device_model`), and the host talks to
+  // the base station or the dongle. Only those two USB product ids appear in
+  // the shipped specification; individual mouse-side ids are not listed.
+  [0x1880, {
+    model: "Sensei Pro / Rival Pro (base station)",
+    family: "sensei-rival-pro",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
+    verified: false,
+  }],
+  [0x1882, {
+    model: "Sensei Pro / Rival Pro (dongle)",
+    family: "sensei-rival-pro",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: false,
     verified: false,
   }],
 ]);
