@@ -14,4 +14,5 @@ export * from "./sensei-rival-pro.js";
 export * from "./sensei-310.js";
 export * from "./prime-mini.js";
 export * from "./rival-5.js";
+export * from "./rival-3-v2.js";
 export * from "./devices.js";
