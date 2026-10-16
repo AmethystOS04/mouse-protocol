@@ -360,11 +360,15 @@ export function decodeFinalmouseReport(reportId: number, data: Uint8Array): Part
   }
 
   switch (command) {
-    case 3: {
+    // Ultralight X reports DPI and polling as 3 and 4; the Starlight X answers with
+    // the command numbers they are set with (FINALMOUSE_COMMAND.dpi/pollingRate, 16/17).
+    case 3:
+    case FINALMOUSE_COMMAND.dpi: {
       const dpi = u16le(payload);
       return dpi === null ? null : { dpi };
     }
-    case 4: {
+    case 4:
+    case FINALMOUSE_COMMAND.pollingRate: {
       const pollingRateHz = u16le(payload);
       return pollingRateHz === null ? null : { pollingRateHz };
     }
