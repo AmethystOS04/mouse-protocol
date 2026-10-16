@@ -12,4 +12,5 @@ export * from "./prime-mini-wireless.js";
 export * from "./sensei-ten.js";
 export * from "./sensei-rival-pro.js";
 export * from "./sensei-310.js";
+export * from "./prime-mini.js";
 export * from "./devices.js";
