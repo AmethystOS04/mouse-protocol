@@ -87,7 +87,8 @@ export type SteelSeriesProtocolFamily =
   | "prime-plus"
   | "prime-mini-wireless"
   | "sensei-ten"
-  | "sensei-rival-pro";
+  | "sensei-rival-pro"
+  | "sensei-310";
 
 export interface SteelSeriesProduct {
   model: string;
@@ -437,6 +438,17 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
   [0x1834, {
     model: "Sensei TEN CS:GO Neon Rider Edition",
     family: "sensei-ten",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // sensei-310 shares Rival 310's command set wholesale (the vendor
+  // specification includes it and overrides only the button table) — see
+  // ./sensei-310.ts. Own family because the button mapping differs.
+  [0x1722, {
+    model: "Sensei 310",
+    family: "sensei-310",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
