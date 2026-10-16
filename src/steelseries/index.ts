@@ -16,4 +16,5 @@ export * from "./prime-mini.js";
 export * from "./rival-5.js";
 export * from "./rival-3-v2.js";
 export * from "./rival-3-wireless-v2.js";
+export * from "./aerox-3-wireless-gen2.js";
 export * from "./devices.js";
