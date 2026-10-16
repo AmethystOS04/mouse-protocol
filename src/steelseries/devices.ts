@@ -88,6 +88,7 @@ export type SteelSeriesProtocolFamily =
   | "aerox3-wireless-gen2"
   | "rival-100"
   | "rival-110"
+  | "rival-300"
   | "rival310"
   | "aerox3"
   | "aerox3-wireless"
@@ -140,6 +141,19 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     hasFirmwareQuery: true,
     verified: false,
   }],
+  // rival_base.lisp (vendor GG specification): the original Rival / Rival 300
+  // command set — linear DPI 0x03, polling 0x04, two-zone LED 0x08/0x07, six
+  // remappable buttons 0x31, save 0x09, firmware 0x10. Shared by the Rival
+  // 300 and every edition, plus the original Rival Dota 2 — see
+  // ./rival-300.ts. Distinct from the Rival 100/110 command sets.
+  [0x1710, {
+    model: "Rival 300",
+    family: "rival-300",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   // rival-110.lisp / rival-106.lisp / rival-300s.lisp (vendor GG
   // specification): all three `include "rival-100"`, so they share its
   // command bytes, but they use the PixArt PMW3326 sensor (200-7200 DPI),
@@ -149,6 +163,14 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
   [0x1729, {
     model: "Rival 110",
     family: "rival-110",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1392, {
+    model: "Rival Dota 2 Edition",
+    family: "rival-300",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
@@ -164,9 +186,25 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     hasFirmwareQuery: true,
     verified: false,
   }],
+  [0x1394, {
+    model: "Rival 300 CS:GO Fade Edition",
+    family: "rival-300",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   [0x1816, {
     model: "Rival 106",
     family: "rival-110",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1712, {
+    model: "Rival 300 Fallout 4 Edition",
+    family: "rival-300",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
@@ -180,6 +218,14 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     hasFirmwareQuery: true,
     verified: false,
   }],
+  [0x1714, {
+    model: "Rival 300 Acer Predator Edition",
+    family: "rival-300",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   [0x170b, {
     model: "Rival 100 Dota 2 Edition (Retail)",
     family: "rival-100",
@@ -188,9 +234,25 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     hasFirmwareQuery: true,
     verified: false,
   }],
+  [0x1716, {
+    model: "Rival 300 CS:GO Fade Edition (stm32)",
+    family: "rival-300",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   [0x170c, {
     model: "Rival 100 Dota 2 Edition (Lenovo)",
     family: "rival-100",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x1718, {
+    model: "Rival 300 HP OMEN Edition",
+    family: "rival-300",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
@@ -205,9 +267,25 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
     hasFirmwareQuery: true,
     verified: false,
   }],
+  [0x171a, {
+    model: "Rival 300 CS:GO Hyper Beast Edition",
+    family: "rival-300",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
   [0x1810, {
     model: "Rival 300S",
     family: "rival-110",
+    wireless: false,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  [0x171c, {
+    model: "Rival 300 Evil Geniuses Edition",
+    family: "rival-300",
     wireless: false,
     settingsReadable: false,
     hasFirmwareQuery: true,
