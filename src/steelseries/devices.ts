@@ -9,6 +9,12 @@
  * codec branches on product id.
  *
  * Only PIDs whose protocol has been traced to a public implementation belong
+ * here. The Rival 3 Gen 2 (`0x1870`) is deliberately absent: its command
+ * set is documented as different from every family below, and listing it
+ * would claim a device this codec would misprogram. The Rival 3 Wireless
+ * Gen 2 (`0x1872`) is present with family `"rival3-wireless-v2"` — its own
+ * module, `./rival-3-wireless-v2.ts`, with an XY DPI command and no
+ * lighting. The Rival 3 Wireless (`0x1830`) is present with family
  * here. The Rival 3 Wireless Gen 2 (`0x1872`) is deliberately absent: its
  * command set is documented as different from every family below, and
  * listing it would claim a device this codec would misprogram. The Rival 3
@@ -93,7 +99,8 @@ export type SteelSeriesProtocolFamily =
   | "sensei-rival-pro"
   | "sensei-310"
   | "prime-mini"
-  | "rival-5";
+  | "rival-5"
+  | "rival3-wireless-v2";
 
 export interface SteelSeriesProduct {
   model: string;
@@ -198,6 +205,18 @@ export const STEELSERIES_PRODUCTS: ReadonlyMap<number, SteelSeriesProduct> = new
   [0x1830, {
     model: "Rival 3 Wireless",
     family: "rival3-wireless",
+    wireless: true,
+    settingsReadable: false,
+    hasFirmwareQuery: true,
+    verified: false,
+  }],
+  // rival-3-wireless-v2 (vendor GG specification): 2.4 GHz mode. Own command
+  // set (XY DPI 0x2C, polling 0x17, buttons 0x19, wheel 0x1A, battery
+  // 0xAA 0x01, firmware 0x10) — see ./rival-3-wireless-v2.ts. No lighting
+  // commands exist on this mouse.
+  [0x1872, {
+    model: "Rival 3 Wireless Gen 2",
+    family: "rival3-wireless-v2",
     wireless: true,
     settingsReadable: false,
     hasFirmwareQuery: true,
