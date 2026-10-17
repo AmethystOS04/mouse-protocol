@@ -118,8 +118,8 @@ function fakeOtMouse({ productId = 0x1905, silentSaves = false } = {}) {
     productName: "OT Mouse",
     opened: true,
     collections: [{
-      usagePage: 0xff00,
-      usage: 1,
+      usagePage: 0xffa1,
+      usage: 0x00a5,
       children: [],
       inputReports: [],
       outputReports: [],
@@ -198,8 +198,8 @@ function bareDevice(productId: number, vendorId = 0x3367, collections: HIDCollec
 }
 
 const feature0 = [{
-  usagePage: 0xff00,
-  usage: 1,
+  usagePage: 0xffa1,
+  usage: 0x00a5,
   children: [],
   inputReports: [],
   outputReports: [],
@@ -306,6 +306,43 @@ test("a mouse that never sends the response packet reports the raw tx/rx trace",
   const client = new EggOtHidClient(fake.device);
   await assert.rejects(
     () => client.readStatus(),
-    /did not answer OT profile block 0\. Trace: tx 33 [0-9a-f ]+ \| rx 00 14 [0-9a-f ]+ \| rx 00 00 [0-9a-f ]+ x\d+.*\. Collections: usage 0xff00:0x1 · feature 0x0/,
+    /did not answer OT profile block 0\. Trace: tx 33 [0-9a-f ]+ \| rx 00 14 [0-9a-f ]+ \| rx 00 00 [0-9a-f ]+ x\d+.*\. Collections: usage 0xffa1:0xa5 · feature 0x0/,
   );
+});
+
+test("the OT driver rejects interfaces other than the vendor 0xFFA1:0x00A5 collection", () => {
+  const withUsage = (usagePage: number, usage: number) => [{
+    usagePage,
+    usage,
+    children: [],
+    inputReports: [],
+    outputReports: [],
+    featureReports: [{ reportId: 0, items: [{ reportSize: 8, reportCount: 63 }] }],
+  }] as unknown as HIDCollectionInfo[];
+  assert.equal(EggOtHidClient.isSupported(bareDevice(0x1905, 0x3367, withUsage(0xffa1, 0x00a5))), true);
+  assert.equal(EggOtHidClient.isSupported(bareDevice(0x1905, 0x3367, withUsage(0x0001, 0x0002))), false);
+  assert.equal(EggOtHidClient.isSupported(bareDevice(0x1905, 0x3367, withUsage(0xffa1, 0x0001))), false);
+});
+
+test("a session opens with the vendor password, then the firmware version, before any profile query", async () => {
+  const fake = fakeOtMouse();
+  await new EggOtHidClient(fake.device).readStatus();
+  assert.match(fake.sent[0]!, /^13:/);
+  assert.match(fake.sent[0]!, / 47 45 47 4a 47$/, "payload starts with ASCII GEGJG");
+  assert.match(fake.sent[1]!, /^11:/);
+  assert.match(fake.sent[2]!, /^33:/);
+});
+
+test("a mouse that answers queries with a lone response and no ack is still read", async () => {
+  const fake = fakeOtMouse();
+  const device = fake.device as unknown as { receiveFeatureReport: () => Promise<DataView> };
+  const receive = device.receiveFeatureReport.bind(device);
+  device.receiveFeatureReport = async () => {
+    for (;;) {
+      const view = await receive();
+      if (new Uint8Array(view.buffer, view.byteOffset, view.byteLength)[1] !== OT_COMTYPE.ack) return view;
+    }
+  };
+  const status = await new EggOtHidClient(fake.device).readStatus();
+  assert.equal(status.dpi, 800);
 });

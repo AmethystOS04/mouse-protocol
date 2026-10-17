@@ -86,6 +86,9 @@ function collectionShapes(): HIDCollectionInfo[][] {
   // only when no legacy input/output control collection sits beside it, so
   // probe that interface feature-only.
   shapes.push([collection(0xffff, 0x01, { feature: REPORT_IDS })]);
+  // Endgame Gear OT mice are claimed only on the vendor's 0xffa1:0x00a5
+  // interface, whose usage is not in USAGES.
+  shapes.push([collection(0xffa1, 0x00a5, { feature: [0] })]);
   return shapes;
 }
 

@@ -1,6 +1,7 @@
 import type { MouseStatus } from "../mouse-types.ts";
 import {
   OT_COMTYPE,
+  OT_COMTYPE_OFFSET,
   OT_CPI_COUNT,
   OT_DEVICE_PROFILES,
   OT_PACKET_SIZE,
@@ -11,6 +12,8 @@ import {
   OT_PROFILE_FLAG,
   OT_READ_RETRIES,
   OT_REPORT_ID,
+  OT_USAGE,
+  OT_USAGE_PAGE,
   OT_VENDOR_ID,
   OT_WRITE_RETRIES,
   otCpiStep,
@@ -22,6 +25,7 @@ import {
   otEncodeFirmwareSetup,
   otEncodeProfilePackets,
   otEncodeQueryPacket,
+  otEncodeSetPasswdPacket,
   otFirmwarePackets,
   otIsValidCpi,
   otLodLabel,
@@ -86,6 +90,7 @@ export class EggOtHidClient {
   private firmwareRaw: number[] | null | undefined;
   private packetPayloadLength = OT_PACKET_SIZE - 1;
   private trace: string[] = [];
+  private sessionStarted = false;
 
   readonly device: HIDDevice;
   readonly profile: OtDeviceProfile;
@@ -95,10 +100,14 @@ export class EggOtHidClient {
     this.profile = otProfileForPid(device.productId);
   }
 
+  /** Only the vendor's 0xFFA1:0x00A5 interface; the other interfaces of the same PID refuse feature-report writes. */
   static isSupported(device: HIDDevice): boolean {
     return device.vendorId === OT_VENDOR_ID
       && OT_DEVICE_PROFILES.has(device.productId)
-      && this.collectionHasFeatureReport(device.collections, OT_REPORT_ID);
+      && (device.collections ?? []).some((collection) =>
+        collection.usagePage === OT_USAGE_PAGE
+        && collection.usage === OT_USAGE
+        && this.collectionHasFeatureReport([collection], OT_REPORT_ID));
   }
 
   private static collectionHasFeatureReport(collections: readonly HIDCollectionInfo[] | undefined | null, reportId: number): boolean {
@@ -110,10 +119,32 @@ export class EggOtHidClient {
   async open(): Promise<void> {
     if (!this.device.opened) await this.device.open();
     this.packetPayloadLength = this.featurePayloadLength(OT_REPORT_ID, OT_PACKET_SIZE - 1);
+    if (!this.sessionStarted) {
+      this.sessionStarted = true;
+      await this.startSession();
+    }
   }
 
   async close(): Promise<void> {
+    this.sessionStarted = false;
     if (this.device.opened) await this.device.close();
+  }
+
+  /**
+   * Vendor session start: kComSetPasswd, then the firmware version. The vendor
+   * carries on when the mouse stays silent here, so failures are traced, not thrown.
+   */
+  private async startSession(): Promise<void> {
+    this.trace = [];
+    try {
+      await this.exchange(otEncodeSetPasswdPacket(), false);
+      const query = new Uint8Array(OT_PACKET_SIZE);
+      query[OT_COMTYPE_OFFSET] = OT_COMTYPE.queryFirmwareVersion;
+      const reply = await this.exchange(query, true);
+      if (reply) this.firmwareRaw = Array.from(reply.subarray(OT_PAYLOAD_INDEX));
+    } catch {
+      // Already recorded in the trace by exchange().
+    }
   }
 
   describeCollections(): string {
@@ -387,7 +418,7 @@ export class EggOtHidClient {
     return reply.subarray(OT_PAYLOAD_INDEX);
   }
 
-  /** Packets seen by the last exchange (tx/rx hex, newest last) so a failed handshake reports what actually came back. */
+  /** Recent packets since the session started (tx/rx hex, newest last) so a failed handshake reports what actually came back. */
   private describeTrace(): string {
     return this.trace.length > 0 ? this.trace.join(" | ") : "no packets";
   }
@@ -444,7 +475,6 @@ export class EggOtHidClient {
     await this.open();
     let writeCounter = 0;
     let readCounter = 0;
-    let receivedAck = false;
     const payload = Uint8Array.from(packet.subarray(1, 1 + this.packetPayloadLength));
     const expectResponse = packet[1] !== OT_COMTYPE.setProfileData
       && packet[1] !== OT_COMTYPE.firmwareDlSetup
@@ -461,11 +491,8 @@ export class EggOtHidClient {
           const reply = await this.receivePacket();
           if (reply[1] !== 0x00) {
             if (expectResponse) {
-              if (reply[1] === OT_COMTYPE.ack) {
-                receivedAck = true;
-                continue;
-              }
-              if (receivedAck) return;
+              if (reply[1] === OT_COMTYPE.ack) continue;
+              return;
             } else if (reply[1] === OT_COMTYPE.ack || reply[1] === OT_COMTYPE.response) {
               return;
             }
@@ -479,7 +506,6 @@ export class EggOtHidClient {
   private async exchange(packet: Uint8Array, expectResponse: boolean): Promise<Uint8Array | null> {
     await this.open();
     const payload = Uint8Array.from(packet.subarray(1, 1 + this.packetPayloadLength));
-    this.trace = [];
     let writeCounter = 0;
     while (writeCounter++ < OT_WRITE_RETRIES) {
       this.record("tx", payload);
@@ -491,7 +517,6 @@ export class EggOtHidClient {
         continue;
       }
       let readCounter = 0;
-      let receivedAck = false;
       while (readCounter++ < OT_READ_RETRIES) {
         let reply: Uint8Array;
         try {
@@ -503,11 +528,9 @@ export class EggOtHidClient {
         this.record("rx", reply);
         if (reply[1] === 0x00) continue;
         if (expectResponse) {
-          if (reply[1] === OT_COMTYPE.ack) {
-            receivedAck = true;
-            continue;
-          }
-          if (receivedAck) return reply;
+          // The vendor treats the ACK as already seen after the write, so a lone response also completes.
+          if (reply[1] === OT_COMTYPE.ack) continue;
+          return reply;
         } else if (reply[1] === OT_COMTYPE.ack || reply[1] === OT_COMTYPE.response) {
           return reply;
         }
