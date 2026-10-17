@@ -306,6 +306,6 @@ test("a mouse that never sends the response packet reports the raw tx/rx trace",
   const client = new EggOtHidClient(fake.device);
   await assert.rejects(
     () => client.readStatus(),
-    /did not answer OT profile block 0\. Trace: tx 33 [0-9a-f ]+ \| rx 00 14 [0-9a-f ]+ \| rx 00 00 [0-9a-f ]+ x\d+/,
+    /did not answer OT profile block 0\. Trace: tx 33 [0-9a-f ]+ \| rx 00 14 [0-9a-f ]+ \| rx 00 00 [0-9a-f ]+ x\d+.*\. Collections: usage 0xff00:0x1 · feature 0x0/,
   );
 });
