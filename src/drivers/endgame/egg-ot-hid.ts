@@ -396,8 +396,17 @@ export class EggOtHidClient {
     const text = typeof detail === "string"
       ? detail
       : Array.from(detail.subarray(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join(" ");
-    if (this.trace.length >= 24) this.trace.shift();
-    this.trace.push(`${direction} ${text}`);
+    const entry = `${direction} ${text}`;
+    const last = this.trace[this.trace.length - 1];
+    const repeat = last?.match(/^(.*) x(\d+)$/);
+    if (last === entry) {
+      this.trace[this.trace.length - 1] = `${entry} x2`;
+    } else if (repeat?.[1] === entry) {
+      this.trace[this.trace.length - 1] = `${entry} x${Number(repeat[2]) + 1}`;
+    } else {
+      if (this.trace.length >= 24) this.trace.shift();
+      this.trace.push(entry);
+    }
     console.log(`[egg-ot] ${direction} ${text}`);
   }
 
