@@ -85,6 +85,7 @@ export class EggOtHidClient {
   private chain: Promise<unknown> = Promise.resolve();
   private firmwareRaw: number[] | null | undefined;
   private packetPayloadLength = OT_PACKET_SIZE - 1;
+  private trace: string[] = [];
 
   readonly device: HIDDevice;
   readonly profile: OtDeviceProfile;
@@ -375,9 +376,29 @@ export class EggOtHidClient {
   }
 
   private async queryBlock(block: number, profileIndex: number): Promise<Uint8Array> {
-    const reply = await this.exchange(otEncodeQueryPacket(block, profileIndex), true);
-    if (!reply) throw new Error(`The mouse did not answer OT profile block ${block}.`);
+    let reply: Uint8Array | null;
+    try {
+      reply = await this.exchange(otEncodeQueryPacket(block, profileIndex), true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`OT profile block ${block} failed: ${message} Trace: ${this.describeTrace()}`);
+    }
+    if (!reply) throw new Error(`The mouse did not answer OT profile block ${block}. Trace: ${this.describeTrace()}`);
     return reply.subarray(OT_PAYLOAD_INDEX);
+  }
+
+  /** Packets seen by the last exchange (tx/rx hex, newest last) so a failed handshake reports what actually came back. */
+  private describeTrace(): string {
+    return this.trace.length > 0 ? this.trace.join(" | ") : "no packets";
+  }
+
+  private record(direction: "tx" | "rx" | "err", detail: Uint8Array | string): void {
+    const text = typeof detail === "string"
+      ? detail
+      : Array.from(detail.subarray(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join(" ");
+    if (this.trace.length >= 24) this.trace.shift();
+    this.trace.push(`${direction} ${text}`);
+    console.log(`[egg-ot] ${direction} ${text}`);
   }
 
   private async updateProfile(profileIndex: number, change: (effect: OtEffect) => void): Promise<OtEffect> {
@@ -444,16 +465,28 @@ export class EggOtHidClient {
   private async exchange(packet: Uint8Array, expectResponse: boolean): Promise<Uint8Array | null> {
     await this.open();
     const payload = Uint8Array.from(packet.subarray(1, 1 + this.packetPayloadLength));
+    this.trace = [];
     let writeCounter = 0;
     while (writeCounter++ < OT_WRITE_RETRIES) {
+      this.record("tx", payload);
       const sent = (await this.device.sendFeatureReport(OT_REPORT_ID, payload)) as unknown as
         | number
         | undefined;
-      if (typeof sent === "number" && sent <= 0) continue;
+      if (typeof sent === "number" && sent <= 0) {
+        this.record("err", `write returned ${sent}`);
+        continue;
+      }
       let readCounter = 0;
       let receivedAck = false;
       while (readCounter++ < OT_READ_RETRIES) {
-        const reply = await this.receivePacket();
+        let reply: Uint8Array;
+        try {
+          reply = await this.receivePacket();
+        } catch (error) {
+          this.record("err", error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+        this.record("rx", reply);
         if (reply[1] === 0x00) continue;
         if (expectResponse) {
           if (reply[1] === OT_COMTYPE.ack) {
