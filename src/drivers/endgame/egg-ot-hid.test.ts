@@ -287,3 +287,25 @@ test("unacknowledged writes reject instead of silently succeeding", async () => 
   const client = new EggOtHidClient(fake.device);
   await assert.rejects(() => client.setDpi(1600), /did not acknowledge/);
 });
+
+test("a mouse that never sends the response packet reports the raw tx/rx trace", async () => {
+  const fake = fakeOtMouse();
+  const device = fake.device as unknown as {
+    sendFeatureReport: (reportId: number, data: BufferSource) => Promise<number>;
+    receiveFeatureReport: () => Promise<DataView>;
+  };
+  const send = device.sendFeatureReport.bind(device);
+  const receive = device.receiveFeatureReport.bind(device);
+  let reads = 0;
+  // Ack only: the vendor response never arrives, like the first OP1 RGB hardware report.
+  device.sendFeatureReport = async (reportId, data) => {
+    reads = 0;
+    return send(reportId, data);
+  };
+  device.receiveFeatureReport = async () => (reads++ === 0 ? receive() : new DataView(new ArrayBuffer(64)));
+  const client = new EggOtHidClient(fake.device);
+  await assert.rejects(
+    () => client.readStatus(),
+    /did not answer OT profile block 0\. Trace: tx 33 [0-9a-f ]+ \| rx 00 14 [0-9a-f ]+ \| rx 00 00 [0-9a-f ]+ x\d+/,
+  );
+});
