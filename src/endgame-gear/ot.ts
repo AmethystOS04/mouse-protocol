@@ -9,9 +9,12 @@
  * straight from the vendor's own TypeScript sources.
  *
  * Transport: 64-byte HID feature reports, report id 0. Byte 1 is the COMTYPE
- * command, byte 2 the packet id, bytes 3..63 the payload. Queries expect an
- * ACK (kComAck) followed by a response; fire-and-forget commands expect an
- * ACK or kComResponse. Vendor retry budget: 10 writes, 10 reads.
+ * command, byte 2 the packet id, bytes 3..63 the payload. The vendor sets its
+ * "ACK seen" flag right after every write, so a query completes on the first
+ * non-empty, non-ACK reply, with or without a preceding ACK. Fire-and-forget
+ * commands complete on an ACK or kComResponse. Vendor retry budget: 10 writes,
+ * 10 reads. A session starts with kComSetPasswd then kComQueryFirmwareVersion,
+ * on the 0xFFA1:0x00A5 interface only.
  *
  * None of this has been exercised on hardware yet: every entry is
  * recognition-grade, not hardware-verified.
@@ -114,6 +117,33 @@ export const OT_PAYLOAD_SIZE = OT_PACKET_SIZE - OT_PAYLOAD_INDEX;
 export const OT_FW_CHUNK_SIZE = 57;
 export const OT_WRITE_RETRIES = 10;
 export const OT_READ_RETRIES = 10;
+
+/**
+ * The only HID interface the vendor app opens (it skips every other
+ * collection of the same PID). Other interfaces are standard mouse/keyboard
+ * collections the browser refuses feature-report writes on.
+ */
+export const OT_USAGE_PAGE = 0xffa1;
+export const OT_USAGE = 0x00a5;
+
+/**
+ * Session password the vendor app sends (kComSetPasswd, packet id 0) before
+ * anything else, then reads the firmware version. A static constant shipped in
+ * the app, not a per-device secret.
+ */
+export const OT_PASSWORD = "GEGJGYIKDCGBE9DWDKB27EAA7K9Z5J1P";
+export const OT_PASSWORD_LENGTH = 32;
+
+/** Build the kComSetPasswd packet that opens a session. */
+export function otEncodeSetPasswdPacket(): Uint8Array {
+  const out = new Uint8Array(OT_PACKET_SIZE);
+  out[OT_COMTYPE_OFFSET] = OT_COMTYPE.setPasswd;
+  out[OT_PACKET_ID_OFFSET] = 0;
+  for (let index = 0; index < OT_PASSWORD_LENGTH; index += 1) {
+    out[OT_PAYLOAD_INDEX + index] = OT_PASSWORD.charCodeAt(index);
+  }
+  return out;
+}
 
 /** Profile-data block ids (kComQueryProfileData / kComSetProfileData). */
 export const OT_PROFILE_BLOCK = {
