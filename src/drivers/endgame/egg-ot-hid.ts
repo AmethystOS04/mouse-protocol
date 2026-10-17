@@ -381,15 +381,20 @@ export class EggOtHidClient {
       reply = await this.exchange(otEncodeQueryPacket(block, profileIndex), true);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`OT profile block ${block} failed: ${message} Trace: ${this.describeTrace()}`);
+      throw new Error(`OT profile block ${block} failed: ${message} ${this.describeFailureContext()}`);
     }
-    if (!reply) throw new Error(`The mouse did not answer OT profile block ${block}. Trace: ${this.describeTrace()}`);
+    if (!reply) throw new Error(`The mouse did not answer OT profile block ${block}. ${this.describeFailureContext()}`);
     return reply.subarray(OT_PAYLOAD_INDEX);
   }
 
   /** Packets seen by the last exchange (tx/rx hex, newest last) so a failed handshake reports what actually came back. */
   private describeTrace(): string {
     return this.trace.length > 0 ? this.trace.join(" | ") : "no packets";
+  }
+
+  /** Trace plus the granted HID collections, so a refused write shows which interface the browser handed us. */
+  private describeFailureContext(): string {
+    return `Trace: ${this.describeTrace()}. Collections: ${this.describeCollections()}`;
   }
 
   private record(direction: "tx" | "rx" | "err", detail: Uint8Array | string): void {
