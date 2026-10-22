@@ -221,6 +221,10 @@
     "./coolermaster": {
       "types": "./dist/coolermaster/index.d.ts",
       "import": "./dist/coolermaster/index.js"
+    },
+    "./scyrox": {
+      "types": "./dist/scyrox/index.d.ts",
+      "import": "./dist/scyrox/index.js"
     }
   },
   "scripts": {

@@ -8,16 +8,22 @@ import {
   LAMZU_ATLANTIS_TIMER_STEP_SECONDS,
   LAMZU_ATLANTIS_VENDOR_ID,
   LAMZU_ATLANTIS_WRITE_ACTIVE_PROFILE,
+  lamzuAtlantisDecodeAngleTuning,
   lamzuAtlantisDecodeBattery,
   lamzuAtlantisDecodeDpiStage,
+  lamzuAtlantisDecodeDpiStage3955,
   lamzuAtlantisDecodeFirmware,
   lamzuAtlantisDecodeLiftOffDistance,
   lamzuAtlantisDecodePollingRate,
   lamzuAtlantisDecodeReply,
+  lamzuAtlantisEncodeAngleTuning,
+  lamzuAtlantisEncodeDpiStage3955,
   lamzuAtlantisEncodeLiftOffDistance,
   lamzuAtlantisEncodePollingRate,
   lamzuAtlantisEncodeRequest,
   lamzuAtlantisFieldIsIntact,
+  lamzuAtlantisLiftOffScale,
+  lamzuAtlantisNearestLiftOffStop,
   lamzuAtlantisProduct,
   lamzuAtlantisSealField,
 } from "@openmouse/protocol/lamzu";
@@ -146,6 +152,26 @@ test("encoding 1,000 Hz follows the transport's declared family", () => {
   assert.equal(lamzuAtlantisEncodePollingRate(3000, "receiver"), null);
 });
 
+test("the pulsar family keeps CompX's own 2-8 kHz bytes", () => {
+  // Scyrox's web configurator encodes `rate <= 1000 ? 1000 / rate :
+  // rate / 2000 * 16`, and a V8S it set to 4,000 Hz held 0x20.
+  assert.equal(lamzuAtlantisEncodePollingRate(125, "pulsar"), 0x08);
+  assert.equal(lamzuAtlantisEncodePollingRate(250, "pulsar"), 0x04);
+  assert.equal(lamzuAtlantisEncodePollingRate(500, "pulsar"), 0x02);
+  assert.equal(lamzuAtlantisEncodePollingRate(1000, "pulsar"), 0x01);
+  assert.equal(lamzuAtlantisEncodePollingRate(2000, "pulsar"), 0x10);
+  assert.equal(lamzuAtlantisEncodePollingRate(4000, "pulsar"), 0x20);
+  assert.equal(lamzuAtlantisEncodePollingRate(8000, "pulsar"), 0x40);
+  assert.equal(lamzuAtlantisEncodePollingRate(1600, "pulsar"), null);
+  assert.equal(lamzuAtlantisDecodePollingRate(0x10, "pulsar"), 2000);
+  assert.equal(lamzuAtlantisDecodePollingRate(0x20, "pulsar"), 4000);
+  assert.equal(lamzuAtlantisDecodePollingRate(0x40, "pulsar"), 8000);
+  // The same byte means different rates per family: 0x10 is Lamzu's
+  // receiver encoding of 1,000 Hz, and 0x80 exists only in the Lamzu table.
+  assert.equal(lamzuAtlantisDecodePollingRate(0x10), 1000);
+  assert.equal(lamzuAtlantisDecodePollingRate(0x80, "pulsar"), null);
+});
+
 test("the rate family is declared per product, not guessed from the rate list", () => {
   // The 1K receiver tops out at 1,000 Hz exactly like the cable, so a ceiling
   // test would quietly decide its encoding. It is wireless and unverified.
@@ -177,12 +203,55 @@ test("a DPI stage decodes both axes, including one Lamzu set separately", () => 
   assert.equal(lamzuAtlantisDecodeDpiStage(bytes("07 07 00")), null);
 });
 
+test("the 3955 stage codec decodes the vendor encoder's 1,600 DPI record", () => {
+  // The value the vendor configurator displayed (1,600) while the legacy
+  // field at flash 12 held the 400 DPI factory default. The bytes are the
+  // configurator's encoder output; this region has not been captured yet.
+  assert.deepEqual(
+    lamzuAtlantisDecodeDpiStage3955(bytes("3f 06 3f 06 00 cb")),
+    { x: 1600, y: 1600 },
+  );
+  assert.equal(lamzuAtlantisDecodeDpiStage3955(bytes("3f 06 3f 06 00 cc")), null);
+  assert.equal(lamzuAtlantisDecodeDpiStage3955(bytes("3f 06 3f 06 00")), null);
+});
+
+test("the 3955 stage codec round-trips both of the vendor's value bands", () => {
+  // 42,000 and below store as dpi - 1; 42,002 and up store halved with the
+  // 0x11 band marker in both nibbles of the flags byte.
+  for (const dpi of [50, 400, 1600, 26000, 42000, 42050, 50000]) {
+    assert.deepEqual(
+      lamzuAtlantisDecodeDpiStage3955(Uint8Array.from(lamzuAtlantisEncodeDpiStage3955(dpi))),
+      { x: dpi, y: dpi },
+    );
+  }
+  assert.deepEqual(lamzuAtlantisEncodeDpiStage3955(1600), [0x3f, 0x06, 0x3f, 0x06, 0x00, 0xcb]);
+  assert.deepEqual(lamzuAtlantisEncodeDpiStage3955(50000), [0xa7, 0x61, 0xa7, 0x61, 0x11, 0x34]);
+});
+
 test("lift-off is 1 mm or 2 mm on this generation, not Pulsar's three stops", () => {
   assert.equal(lamzuAtlantisDecodeLiftOffDistance(0x01), "Low");
   assert.equal(lamzuAtlantisDecodeLiftOffDistance(0x02), "Medium");
   assert.equal(lamzuAtlantisDecodeLiftOffDistance(0x03), null);
   assert.equal(lamzuAtlantisEncodeLiftOffDistance("Low"), 0x01);
   assert.equal(lamzuAtlantisEncodeLiftOffDistance("High"), null);
+});
+
+test("a lift-off scale carries every code's height and rejects codes outside it", () => {
+  const heights = [0.7, 0.9, 1.2, 1.4, 1.6];
+  assert.equal(lamzuAtlantisLiftOffScale(3, heights)?.millimetres, 1.2, "uneven steps are not interpolated");
+  assert.deepEqual(lamzuAtlantisLiftOffScale(5, heights)?.millimetresByCode, heights);
+  assert.equal(lamzuAtlantisLiftOffScale(0, heights), null);
+  assert.equal(lamzuAtlantisLiftOffScale(6, heights), null);
+  assert.deepEqual(heights.map(lamzuAtlantisNearestLiftOffStop), ["Low", "Low", "Medium", "Medium", "High"]);
+});
+
+test("the angle-tune byte is a signed degree count", () => {
+  for (const degrees of [-30, -1, 0, 1, 30]) {
+    assert.equal(lamzuAtlantisDecodeAngleTuning(lamzuAtlantisEncodeAngleTuning(degrees)), degrees);
+  }
+  assert.equal(lamzuAtlantisEncodeAngleTuning(-30), 0xe2);
+  assert.equal(FLASH.angleTune, 189);
+  assert.equal(FLASH.angleTuneState, 191);
 });
 
 test("the catalog answers only for Lamzu's vendor id", () => {
