@@ -2,18 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  LAMZU_ATLANTIS_CLEAR_SETTINGS as CLEAR_SETTINGS,
   LAMZU_ATLANTIS_COMMAND as COMMAND,
   LAMZU_ATLANTIS_FLASH as FLASH,
   LAMZU_ATLANTIS_USAGE,
   LAMZU_ATLANTIS_USAGE_PAGE,
   LAMZU_ATLANTIS_VENDOR_ID,
   LAMZU_ATLANTIS_WRITE_ACTIVE_PROFILE as WRITE_ACTIVE_PROFILE,
+  lamzuAtlantisEncodeDpiStage3955,
   lamzuAtlantisSealField,
 } from "@openmouse/protocol/lamzu";
 import { pulsarVgnEncodeDpi } from "@openmouse/protocol/pulsar";
 import { TEEVOLUTION_KEY_CLASS as KEY, teevolutionEncodeKeyFunction } from "@openmouse/protocol/teevolution";
+import { SCYROX_V8S_20K_ADDRESS } from "@openmouse/protocol/scyrox";
 import { LamzuAtlantisHidClient } from "./hid.ts";
 import { NoirM1NexHidClient } from "../noir/m1-nex-hid.ts";
+import { ScyroxHidClient } from "../scyrox/hid.ts";
 
 const REPORT_ID = 8;
 const PACKET = 16;
@@ -38,8 +42,10 @@ class FakeAtlantis extends EventTarget {
   }] as unknown as HIDCollectionInfo[];
 
   opened = false;
-  flash = new Uint8Array(256);
+  flash: Uint8Array;
   profile = 0;
+  /** ClearSetting requests received. */
+  resets = 0;
   sent: Uint8Array[] = [];
   opens = 0;
   /** Set to drop replies, so a caller's timeout path can be exercised. */
@@ -60,10 +66,11 @@ class FakeAtlantis extends EventTarget {
     for (const deliver of queued) deliver();
   }
 
-  constructor(productId = 0xf50f) {
+  constructor(productId = 0xf50f, flashSize = 256) {
     super();
     this.reportSeen = new Promise<void>((resolve) => { this.announceReport = resolve; });
     this.productId = productId;
+    this.flash = new Uint8Array(flashSize);
     this.writeField(FLASH.reportRate, [0x02]);
     this.writeField(FLASH.dpiStageCount, [2]);
     this.writeField(FLASH.currentDpi, [0]);
@@ -125,6 +132,8 @@ class FakeAtlantis extends EventTarget {
     } else if (command === COMMAND.readVersionId) {
       reply[4] = 2;
       reply.set([1, 0x24], 5);
+    } else if (command === CLEAR_SETTINGS) {
+      this.resets += 1;
     } else {
       reply[1] = 1;
     }
@@ -225,6 +234,187 @@ test("the 4K receiver writes the receiver encoding of 1,000 Hz", async () => {
   await client.readStatus();
   assert.equal(await client.setPollingRate(1000), 1000);
   assert.equal(device.flash[FLASH.reportRate], 0x10);
+  await client.close();
+});
+
+test("a 3955 sensor's stages are read and written at 6912, not the legacy fields", async () => {
+  const device = new FakeAtlantis(0xf515, FLASH.sensor3955DpiValues + 6);
+  device.writeField(FLASH.dpiStageCount, [1]);
+  // The legacy field holds the 400 DPI factory default the V8S showed on
+  // hardware; the 3955 record holds the vendor encoder's 1,600, the value the
+  // configurator displayed for that mouse.
+  device.flash.set(pulsarVgnEncodeDpi(400), FLASH.dpiValues);
+  device.flash.set(lamzuAtlantisEncodeDpiStage3955(1600), FLASH.sensor3955DpiValues);
+
+  const client = new ScyroxHidClient(device as unknown as HIDDevice);
+  const status = await client.readStatus();
+  assert.deepEqual(status.dpiStages, [1600]);
+  assert.equal(status.dpi, 1600);
+
+  assert.equal(await client.setDpiStageValue(0, 50000), 50000);
+  assert.deepEqual(
+    [...device.flash.subarray(FLASH.sensor3955DpiValues, FLASH.sensor3955DpiValues + 6)],
+    lamzuAtlantisEncodeDpiStage3955(50000),
+  );
+  assert.deepEqual(
+    [...device.flash.subarray(FLASH.dpiValues, FLASH.dpiValues + 4)],
+    [...pulsarVgnEncodeDpi(400)],
+    "the legacy factory default is left alone",
+  );
+  await client.close();
+});
+
+test("the 20K switch reads and writes flash 8, gated on performance mode", async () => {
+  const device = new FakeAtlantis(0xf515, FLASH.sensor3955DpiValues + 6);
+  device.writeField(FLASH.dpiStageCount, [1]);
+  device.flash.set(lamzuAtlantisEncodeDpiStage3955(1600), FLASH.sensor3955DpiValues);
+  const client = new ScyroxHidClient(device as unknown as HIDDevice);
+  assert.equal((await client.readStatus()).turboMode, false, "off while the byte is zero");
+
+  // The vendor configurator disables the switch until Competitive Mode is on;
+  // the driver refuses the write rather than flipping both switches.
+  device.writeField(FLASH.performanceState, [0]);
+  await assert.rejects(() => client.setTurboMode(true), /requires performance mode/);
+  assert.equal(device.flash[SCYROX_V8S_20K_ADDRESS], 0, "the refused write never reached the device");
+
+  device.writeField(FLASH.performanceState, [1]);
+  assert.equal(await client.setTurboMode(true), true);
+  assert.equal(device.flash[SCYROX_V8S_20K_ADDRESS], 1);
+  assert.equal((await client.readStatus(true)).turboMode, true);
+  await client.close();
+});
+
+test("a mouse without the 20K byte does not expose turbo mode", async () => {
+  const client = clientFor(new FakeAtlantis());
+  assert.equal((await client.readStatus()).turboMode, undefined);
+  await assert.rejects(() => client.setTurboMode(true), /does not expose a turbo/);
+  await client.close();
+});
+
+/** A V8S on its cable, one stage at 1,600 DPI in the 3955 region. */
+function fakeV8s(): FakeAtlantis {
+  const device = new FakeAtlantis(0xf515, FLASH.sensor3955DpiValues + 6);
+  device.writeField(FLASH.dpiStageCount, [1]);
+  device.flash.set(lamzuAtlantisEncodeDpiStage3955(1600), FLASH.sensor3955DpiValues);
+  return device;
+}
+
+test("a Scyrox sleep write lands in the performance timer too, a Lamzu one does not", async () => {
+  const scyrox = fakeV8s();
+  const client = new ScyroxHidClient(scyrox as unknown as HIDDevice);
+  assert.equal(await client.setSleepTimeout(300), 300);
+  assert.deepEqual([...scyrox.flash.subarray(FLASH.sleepTime, FLASH.sleepTime + 2)], lamzuAtlantisSealField([30]));
+  assert.deepEqual(
+    [...scyrox.flash.subarray(FLASH.performanceTime, FLASH.performanceTime + 2)],
+    lamzuAtlantisSealField([30]),
+    "the vendor's Scyrox sleep setter writes 173 and 183 alike",
+  );
+  await client.close();
+
+  const lamzu = new FakeAtlantis();
+  const lamzuClient = clientFor(lamzu);
+  await lamzuClient.setSleepTimeout(300);
+  assert.deepEqual([...lamzu.flash.subarray(FLASH.performanceTime, FLASH.performanceTime + 2)], [0, 0]);
+  await lamzuClient.close();
+});
+
+test("the V8S lift-off byte reads and writes as a five-height scale", async () => {
+  const device = fakeV8s();
+  device.writeField(FLASH.liftOffDistance, [2]);
+  const client = new ScyroxHidClient(device as unknown as HIDDevice);
+  const status = await client.readStatus();
+  assert.deepEqual(status.liftOffScale, {
+    value: 2,
+    min: 1,
+    max: 5,
+    millimetres: 0.9,
+    minMillimetres: 0.7,
+    maxMillimetres: 1.6,
+    millimetresByCode: [0.7, 0.9, 1.2, 1.4, 1.6],
+  });
+  assert.equal(status.liftOffDistance, "Low", "0.9 mm is nearest the low stop");
+
+  assert.equal(await client.setLiftOffScale(3), 3);
+  assert.deepEqual([...device.flash.subarray(FLASH.liftOffDistance, FLASH.liftOffDistance + 2)], lamzuAtlantisSealField([3]));
+  const after = await client.readStatus(true);
+  assert.equal(after.liftOffScale?.millimetres, 1.2);
+  assert.equal(after.liftOffDistance, "Medium");
+
+  await assert.rejects(() => client.setLiftOffScale(0), /between 1 and 5/);
+  await assert.rejects(() => client.setLiftOffScale(6), /between 1 and 5/);
+  await assert.rejects(() => client.setLiftOffDistance("Low"), /configurable lift-off/);
+  await client.close();
+});
+
+test("a Lamzu keeps its two lift-off stops and no scale", async () => {
+  const client = clientFor(new FakeAtlantis());
+  const status = await client.readStatus();
+  assert.equal(status.liftOffDistance, "Low");
+  assert.equal(status.liftOffScale, undefined);
+  await assert.rejects(() => client.setLiftOffScale(1), /does not expose a lift-off scale/);
+  await client.close();
+});
+
+test("angle tuning needs both sealed fields, switches itself on, and stores signed degrees", async () => {
+  const device = fakeV8s();
+  const client = new ScyroxHidClient(device as unknown as HIDDevice);
+  assert.equal((await client.readStatus()).angleTuning, undefined, "unsealed fields read as unsupported");
+  await client.close();
+
+  device.writeField(FLASH.angleTune, [0]);
+  device.writeField(FLASH.angleTuneState, [0]);
+  const reopened = new ScyroxHidClient(device as unknown as HIDDevice);
+  assert.equal((await reopened.readStatus()).angleTuning, 0);
+
+  assert.equal(await reopened.setAngleTuning(-12), -12);
+  assert.deepEqual([...device.flash.subarray(FLASH.angleTune, FLASH.angleTune + 2)], lamzuAtlantisSealField([0xf4]));
+  assert.deepEqual(
+    [...device.flash.subarray(FLASH.angleTuneState, FLASH.angleTuneState + 2)],
+    lamzuAtlantisSealField([1]),
+    "the state byte is switched on before the first angle write",
+  );
+  assert.equal((await reopened.readStatus(true)).angleTuning, -12);
+
+  await assert.rejects(() => reopened.setAngleTuning(31), /between -30 and 30/);
+  await assert.rejects(() => reopened.setAngleTuning(1.5), /between -30 and 30/);
+  await reopened.close();
+
+  const lamzu = clientFor(new FakeAtlantis());
+  assert.equal((await lamzu.readStatus()).angleTuning, undefined);
+  await assert.rejects(() => lamzu.setAngleTuning(5), /does not expose angle tuning/);
+  await lamzu.close();
+});
+
+test("a factory reset sends ClearSetting once and drops the cached settings", async () => {
+  const device = fakeV8s();
+  const client = new ScyroxHidClient(device as unknown as HIDDevice);
+  await client.readStatus();
+  const before = device.sent.length;
+  await client.factoryReset();
+  assert.equal(device.resets, 1);
+  const request = device.sent.at(-1)!;
+  assert.equal(request[0], CLEAR_SETTINGS);
+  assert.deepEqual([...request.subarray(1, 5)], [0, 0, 0, 0], "no address and no payload");
+  assert.equal(device.sent.length, before + 1);
+
+  // With the cache gone, a live read is a full read again.
+  device.writeField(FLASH.debounceTime, [7]);
+  assert.equal((await client.readStatus(true)).debounceMs, 7);
+  await client.close();
+
+  const lamzu = clientFor(new FakeAtlantis());
+  await assert.rejects(() => lamzu.factoryReset(), /does not expose a settings restore/);
+  assert.equal(lamzu.device.opened, false, "a refused restore never opens the device");
+  await lamzu.close();
+});
+
+test("a factory reset is not retried when the echo never comes", async () => {
+  const device = fakeV8s();
+  const client = new ScyroxHidClient(device as unknown as HIDDevice);
+  await client.open();
+  device.mute = true;
+  await assert.rejects(() => client.factoryReset(), /got no answer/);
+  assert.equal(device.sent.filter((report) => report[0] === CLEAR_SETTINGS).length, 1);
   await client.close();
 });
 

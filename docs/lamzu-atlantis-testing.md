@@ -21,7 +21,8 @@ ids the other driver handles (`0x373e`, `0x37b0`).
 | `0xf50f` | Mouse on its cable | On hardware |
 | `0xf50d` | 1K receiver | Vendor table only |
 | `0xf510` | 4K receiver | Vendor table only |
-| `0xf517` | Receiver | Vendor table only |
+
+`0xf517` was in Lamzu's shipped table as a fourth receiver, but hardware showed it enumerating as a Scyrox Turbo 8k dongle; it moved to `src/scyrox/index.ts`.
 
 Six models share these ids: Atlantis OG V2, Atlantis Mini, Atlantis Mini Pro,
 Thorn, Maya and Paro of this generation. Nothing on the wire separates them —
