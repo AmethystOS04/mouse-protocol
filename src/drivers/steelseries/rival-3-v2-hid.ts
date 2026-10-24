@@ -1,4 +1,4 @@
-import type { MouseStatus } from "../mouse-types.js";
+import type { MouseLighting, MouseStatus } from "../mouse-types.js";
 import {
   RIVAL3_GEN2_DEFAULT_DPI_PRESETS,
   RIVAL3_GEN2_DEFAULT_POLLING_RATE,
@@ -18,32 +18,37 @@ import {
   type Rival3Gen2ButtonName,
   type Rival3Gen2DpiPreset,
 } from "@openmouse/protocol/steelseries";
+import {
+  RIVAL3_GEN2_BRIGHTNESS_LEVELS,
+  RIVAL3_GEN2_LIGHTING_ZONE_MODES,
+  RIVAL3_GEN2_REACTIVE_MODES,
+  RIVAL3_GEN2_ZONE_LABELS,
+  RIVAL3_GEN2_ZONES,
+  steelseriesRival3Gen2EncodeBrightness,
+  steelseriesRival3Gen2EncodeDefaultLighting,
+  steelseriesRival3Gen2EncodeRainbow,
+  steelseriesRival3Gen2EncodeReactiveColor,
+  steelseriesRival3Gen2EncodeZoneColor,
+  steelseriesRival3Gen2RgbFromHex,
+  steelseriesRival3Gen2RgbToHex,
+  type Rival3Gen2DefaultLighting,
+  type Rival3Gen2Rgb,
+  type Rival3Gen2Zone,
+} from "@openmouse/protocol/steelseries";
 
-/** rivalcfg's `command_approve_delay`, shared across every SteelSeries family. */
 const COMMAND_DELAY_MS = 50;
-/** Firmware replies are small; allow slack over rivalcfg-style timeouts. */
 const FIRMWARE_TIMEOUT_MS = 500;
 
-/**
- * SteelSeries Rival 3 Gen 2 WebHID control (`1038:1870`, wired only).
- *
- * DPI presets, polling rate, and buttons are write-only; only the 15-byte
- * firmware version string (`90`) can be read back, and this driver uses it
- * as its connectivity probe. `readStatus` therefore reports the session's
- * last-written values (or the documented defaults before any write) with
- * `valuesVerified: false`. Every setter follows its write with the save
- * command so the change persists in the mouse's onboard memory. See
- * `../../steelseries/rival-3-v2.ts` for the full protocol writeup —
- * reconstructed from the vendor's GG device specification, with the DPI
- * table transcribed from the vendor file (note the documented divergence
- * from rivalcfg's TrueMove Core table there).
- *
- * DPI is managed as five XY stages (the common factory table), mirroring
- * the Aerox wireless drivers: `setDpi` edits both axes of the active stage,
- * and the whole table is rewritten on every change because the device
- * exposes no per-preset getter. Do not confuse this mouse with Rival 3 Gen
- * 1 (`1038:1824`/`1038:184C`, a different command set).
- */
+const ZONE_DEFAULTS: Record<Rival3Gen2Zone, Rival3Gen2Rgb> = {
+  1: { r: 255, g: 0, b: 0 },
+  2: { r: 0, g: 255, b: 0 },
+  3: { r: 0, g: 0, b: 255 },
+};
+
+const ZONE_MODES = RIVAL3_GEN2_LIGHTING_ZONE_MODES;
+const REACTIVE_ZONE = "Click reaction";
+const REACTIVE_MODES = RIVAL3_GEN2_REACTIVE_MODES;
+
 export class SteelSeriesRival3Gen2HidClient {
   readonly device: HIDDevice;
   private queue: Promise<unknown> = Promise.resolve();
@@ -52,17 +57,19 @@ export class SteelSeriesRival3Gen2HidClient {
   private dpiStages: Rival3Gen2DpiPreset[] = RIVAL3_GEN2_DEFAULT_DPI_PRESETS.map((dpi) => ({ x: dpi, y: dpi }));
   private activeDpiStage = 0;
   private pollingRateHz: number = RIVAL3_GEN2_DEFAULT_POLLING_RATE;
+  private brightness = 100;
+  private readonly zones = new Map<Rival3Gen2Zone, { mode: "Static" | "Off" | "Cycling"; color: Rival3Gen2Rgb }>(
+    RIVAL3_GEN2_ZONES.map((zone) => [zone, { mode: "Static", color: { ...ZONE_DEFAULTS[zone] } }]),
+  );
+  private reactiveColor: Rival3Gen2Rgb | null = null;
+  private defaultLighting: Rival3Gen2DefaultLighting = "rainbow";
 
   private readonly onInputReport = (event: HIDInputReportEvent): void => {
-    const payload = new Uint8Array(
-      event.data.buffer.slice(event.data.byteOffset, event.data.byteOffset + event.data.byteLength),
-    );
+    const payload = new Uint8Array(event.data.buffer.slice(event.data.byteOffset, event.data.byteOffset + event.data.byteLength));
     for (const finish of [...this.inputWaiters]) finish(payload);
   };
 
-  constructor(device: HIDDevice) {
-    this.device = device;
-  }
+  constructor(device: HIDDevice) { this.device = device; }
 
   static isSupported(device: HIDDevice): boolean {
     if (device.vendorId !== STEELSERIES_VENDOR_ID) return false;
@@ -70,9 +77,7 @@ export class SteelSeriesRival3Gen2HidClient {
   }
 
   get pollIntervalMs(): number { return 30_000; }
-
   get supportedPollingRates(): number[] { return [...RIVAL3_GEN2_POLLING_RATES]; }
-
   getDpiOptions(): number[] { return steelseriesRival3Gen2DpiOptions(); }
 
   async open(): Promise<void> {
@@ -96,11 +101,11 @@ export class SteelSeriesRival3Gen2HidClient {
       await this.open();
       const firmware = await this.probeFirmware();
       const product = STEELSERIES_PRODUCTS.get(this.device.productId);
-      const name = this.device.productName?.trim() || `SteelSeries ${product?.model ?? "Rival 3 Gen 2"}`;
       const active = this.dpiStages[this.activeDpiStage];
+      const lightingZones = this.lightingZones();
       return {
         brand: "SteelSeries",
-        name,
+        name: this.device.productName?.trim() || `SteelSeries ${product?.model ?? "Rival 3 Gen 2"}`,
         ui: {
           family: "steelseries-rival3-v2",
           settingsReady: true,
@@ -119,11 +124,12 @@ export class SteelSeriesRival3Gen2HidClient {
         connectionType: "Wired",
         liftOffDistance: null,
         firmware: [firmware],
+        lighting: lightingZones[0],
+        lightingZones,
       };
     });
   }
 
-  /** writes `dpi` into both axes of the active stage. */
   async setDpi(dpi: number): Promise<number> {
     await this.setDpiStageValue(this.activeDpiStage, { x: dpi, y: dpi });
     return dpi;
@@ -156,6 +162,101 @@ export class SteelSeriesRival3Gen2HidClient {
     await this.commit(steelseriesRival3Gen2EncodeButtonsMapping(mapping));
   }
 
+  async setLighting(lighting: MouseLighting): Promise<MouseLighting> {
+    if (lighting.zone === REACTIVE_ZONE) {
+      if (lighting.mode !== "Reactive" && lighting.mode !== "Off") throw new Error("Choose Reactive or Off.");
+      await this.setReactiveColor(lighting.mode === "Off" ? null : steelseriesRival3Gen2RgbFromHex(lighting.color));
+      return this.lightingZones().find(({ zone }) => zone === REACTIVE_ZONE)!;
+    }
+
+    const zone = RIVAL3_GEN2_ZONES.find((candidate) => RIVAL3_GEN2_ZONE_LABELS[candidate] === lighting.zone);
+    if (zone === undefined) throw new Error(`The Rival 3 Gen 2 has no "${lighting.zone}" lighting zone.`);
+
+    switch (lighting.mode) {
+      case "Static":
+        await this.setZoneColor(zone, steelseriesRival3Gen2RgbFromHex(lighting.color));
+        break;
+      case "Off": {
+        const previous = this.zones.get(zone)!.color;
+        await this.setZoneColor(zone, { r: 0, g: 0, b: 0 });
+        this.zones.set(zone, { mode: "Off", color: { ...previous } });
+        break;
+      }
+      case "Cycling":
+        await this.setRainbow(zone);
+        break;
+      default:
+        throw new Error(`The Rival 3 Gen 2 does not support ${lighting.mode ?? "that"} lighting.`);
+    }
+    return this.lightingZones().find(({ zone: label }) => label === lighting.zone)!;
+  }
+
+  async setLightingBrightness(brightness: number): Promise<number> {
+    await this.commit(steelseriesRival3Gen2EncodeBrightness(brightness));
+    this.brightness = brightness;
+    return brightness;
+  }
+
+  async setZoneColor(zone: Rival3Gen2Zone, color: Rival3Gen2Rgb): Promise<void> {
+    await this.commit(steelseriesRival3Gen2EncodeZoneColor(zone, color));
+    this.zones.set(zone, { mode: "Static", color: { ...color } });
+  }
+
+  async setReactiveColor(color: Rival3Gen2Rgb | null): Promise<void> {
+    await this.commit(steelseriesRival3Gen2EncodeReactiveColor(color));
+    this.reactiveColor = color && { ...color };
+  }
+
+  async setRainbow(zone: Rival3Gen2Zone | "all" = "all"): Promise<void> {
+    const mask = zone === "all" ? 0x07 : 1 << (zone - 1);
+    await this.commit(steelseriesRival3Gen2EncodeRainbow(mask));
+    if (zone === "all") {
+      for (const candidate of RIVAL3_GEN2_ZONES) this.zones.set(candidate, { ...this.zones.get(candidate)!, mode: "Cycling" });
+    } else {
+      this.zones.set(zone, { ...this.zones.get(zone)!, mode: "Cycling" });
+    }
+  }
+
+  async setDefaultLighting(mode: Rival3Gen2DefaultLighting): Promise<void> {
+    await this.commit(steelseriesRival3Gen2EncodeDefaultLighting(mode));
+    this.defaultLighting = mode;
+  }
+
+  private lightingZones(): MouseLighting[] {
+    const base = {
+      color2: null,
+      dualColorModes: [],
+      reactiveModes: [],
+      speeds: [],
+      speed: null,
+      brightness: this.brightness,
+      brightnessLevels: RIVAL3_GEN2_BRIGHTNESS_LEVELS,
+      writeOnly: true,
+    } as const;
+    return [
+      ...RIVAL3_GEN2_ZONES.map((zone): MouseLighting => {
+        const state = this.zones.get(zone)!;
+        return {
+          ...base,
+          zone: RIVAL3_GEN2_ZONE_LABELS[zone],
+          group: "Strip",
+          modes: ZONE_MODES,
+          mode: state.mode,
+          color: steelseriesRival3Gen2RgbToHex(state.color),
+          colorModes: ["Static"],
+        };
+      }),
+      {
+        ...base,
+        zone: REACTIVE_ZONE,
+        modes: REACTIVE_MODES,
+        mode: this.reactiveColor ? "Reactive" : "Off",
+        color: this.reactiveColor ? steelseriesRival3Gen2RgbToHex(this.reactiveColor) : "#ffffff",
+        colorModes: ["Reactive"],
+      },
+    ];
+  }
+
   private requireStage(stage: number): void {
     if (!Number.isInteger(stage) || stage < 0 || stage >= RIVAL3_GEN2_MAX_DPI_PRESETS) {
       throw new Error(`The Rival 3 Gen 2 holds ${RIVAL3_GEN2_MAX_DPI_PRESETS} DPI stages.`);
@@ -184,10 +285,6 @@ export class SteelSeriesRival3Gen2HidClient {
     });
   }
 
-  /**
-   * `90` — 15-byte firmware version string. Doubles as the proof that the
-   * granted interface is the config channel.
-   */
   private async probeFirmware(): Promise<string> {
     const response = new Promise<Uint8Array | null>((resolve) => {
       let timer: ReturnType<typeof setTimeout>;
@@ -201,9 +298,7 @@ export class SteelSeriesRival3Gen2HidClient {
     });
     await this.write(steelseriesRival3Gen2FirmwareQuery());
     const payload = await response;
-    if (!payload) {
-      throw new Error("The Rival 3 Gen 2 did not answer the firmware query on this interface. Add the device again and choose another entry.");
-    }
+    if (!payload) throw new Error("The Rival 3 Gen 2 did not answer the firmware query on this interface. Add the device again and choose another entry.");
     return steelseriesRival3Gen2DecodeFirmware(payload);
   }
 
@@ -211,9 +306,7 @@ export class SteelSeriesRival3Gen2HidClient {
     await this.device.sendReport(RIVAL3_GEN2_REPORT_ID, payload.buffer as ArrayBuffer);
   }
 
-  private delay(milliseconds: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, milliseconds));
-  }
+  private delay(milliseconds: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
   private async run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.queue.then(operation, operation);
